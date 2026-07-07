@@ -1,0 +1,84 @@
+{
+  "_comment": "백테스트 파라미터. 값만 수정하고 `python main.py` 재실행하면 반영됩니다. 경로는 프로젝트 루트 기준 상대경로.",
+
+  "data": {
+    "_comment": "source=parquet(로컬 datasets/ohlcv) | yfinance(온라인 다운로드). start/end=백테스트 구간(null=전체/최신). warmup_bars=시작일 이전에 추가 확보할 워밍업 봉 수(지표 예열용). cache=yfinance 다운로드를 data_dir 에 parquet 캐시.",
+    "source": "parquet",
+    "data_dir": "datasets/ohlcv",
+    "start": "2018-01-01",
+    "end": "2026-06-30",
+    "warmup_bars": 260,
+    "cache": true
+  },
+
+  "universe": {
+    "_comment": "백테스트 대상 {종목코드: 표시명}. 줄 추가/삭제로 편집. datasets/ohlcv 에 <코드>.parquet 필요(없으면 source=yfinance 로 받거나 미리 다운로드).",
+    "SPY": "S&P500(대형)",
+    "QQQ": "나스닥100(성장)",
+    "IWM": "러셀2000(소형)",
+    "DIA": "다우30(우량)",
+    "069500": "KODEX200(한국)",
+    "005930": "삼성전자",
+    "035420": "네이버",
+    "196170": "알테오젠(코스닥)",
+    "105560": "KB금융",
+    "033780": "KT&G"
+  },
+
+  "indicator": {
+    "trend_score": {
+      "_comment": "일봉 TrendScore(0~100). adx_penalty_max=추세 약할 때 최대 차감점수, adx_full_strength=|ADX|가 이 값 이상이면 페널티 0(ADX 임계값). ewmac/tsmom/rsi 가중 합은 1.0 권장.",
+      "min_len": 252,
+      "rsi_period": 14,
+      "adx_period": 14,
+      "ewmac_weight": 0.55,
+      "tsmom_weight": 0.25,
+      "rsi_weight": 0.20,
+      "adx_penalty_max": 15.0,
+      "adx_full_strength": 25.0,
+      "smooth_span": 30
+    }
+  },
+
+  "strategy": {
+    "_comment": "라이브 규칙: TrendScore 36 돌파 + ADX≥28 매수 / 36 하회 매도. adx_gate=null 이면 순수 히스테리시스(이때 entry>exit 필수). adx_directional=true 는 상승방향 ADX≥gate, false 는 |ADX|≥gate.",
+    "entry": 50.0,
+    "exit": 45.0,
+    "adx_gate": 21.0,
+    "adx_directional": true
+  },
+
+  "strategies": {
+    "_comment": "비교에 포함할 전략 on/off. regime_ts=레짐게이트 TrendScore(진입=TS+ADX, 청산=v5.3 lifeline).",
+    "trend_score": false,
+    "trend_score_base": false,
+    "supertrend": true,
+    "regime_ts": false,
+    "sma_slope": true
+  },
+
+  "supertrend": {
+    "_comment": "SuperTrend(ATR 밴드 추세추종) 파라미터. multiplier 클수록 둔감(휩쏘↓·반응 느림).",
+    "atr_period": 10,
+    "multiplier": 3.0
+  },
+
+  "stops": {
+    "_comment": "TrendScore 에 ATR 손절 추가 변형. enabled 면 [손절없음 기본] + [손절추가] 를 함께 비교. stop_loss_atr=하드 손절 ATR 배수(진입가 기준), trailing_atr=추적 손절 ATR 배수(최고가 기준). null/0 이면 해당 스탑 미사용.",
+    "enabled": true,
+    "atr_period": 14,
+    "stop_loss_atr": null,
+    "trailing_atr": 2.5
+  },
+
+  "backtest": {
+    "_comment": "cost=왕복 거래비용(0.0010=0.10%), min_bars=백테스트 최소 봉 수.",
+    "cost": 0.0010,
+    "min_bars": 300
+  },
+
+  "output": {
+    "_comment": "out_path=인덱스 페이지 경로. 종목별 개별 HTML(<코드>.html)은 같은 폴더에 함께 생성됨.",
+    "out_path": "reports/index.html"
+  }
+}
