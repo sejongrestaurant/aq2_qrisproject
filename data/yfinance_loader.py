@@ -39,7 +39,7 @@ class YFinanceDataLoader(DataLoader):
         end: Optional[str] = None,
         warmup_bars: int = 260,
         cache_dir: Optional[str] = None,
-        auto_adjust: bool = False,
+        auto_adjust: bool = True,
     ):
         self.start = start
         self.end = end

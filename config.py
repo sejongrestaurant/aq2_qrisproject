@@ -99,6 +99,7 @@ class Config:
     use_supertrend: bool = True
     use_regime_ts: bool = False  # 레짐게이트 TrendScore(진입=TS, 청산=v5.3 lifeline) 비교 포함 여부
     use_sma_slope: bool = False  # 20SMA 기울기 + ROC slope 전략 비교 포함 여부
+    use_trendrider: bool = False  # 3조 regime-trendrider v4 전략 비교 포함 여부
     supertrend: SuperTrendParams = field(default_factory=SuperTrendParams)
     # TrendScore ATR 손절 변형(비교용). enabled 면 손절 없는 기본 + 손절 추가 변형을 함께 비교.
     stops_enabled: bool = True
@@ -162,6 +163,7 @@ class Config:
         cfg.use_supertrend = bool(sel.get("supertrend", cfg.use_supertrend))
         cfg.use_regime_ts = bool(sel.get("regime_ts", cfg.use_regime_ts))
         cfg.use_sma_slope = bool(sel.get("sma_slope", cfg.use_sma_slope))
+        cfg.use_trendrider = bool(sel.get("trendrider", cfg.use_trendrider))
         st = _only_known(SuperTrendParams, raw.get("supertrend", {}))
         cfg.supertrend = SuperTrendParams(**{**asdict(SuperTrendParams()), **st})
 
@@ -194,7 +196,7 @@ class Config:
         if self.source not in ("parquet", "yfinance"):
             raise ValueError(f"[config] source 는 'parquet'|'yfinance' 여야 합니다: {self.source}")
         if not (self.use_trend_score or self.use_supertrend or self.use_regime_ts
-                or self.use_sma_slope):
+                or self.use_sma_slope or self.use_trendrider):
             raise ValueError("[config] strategies 에서 최소 1개 전략을 활성화해야 합니다.")
         if self.warmup_bars < self.trend_score.min_len:
             print(f"[config] 경고: warmup_bars({self.warmup_bars}) < TrendScore.min_len"

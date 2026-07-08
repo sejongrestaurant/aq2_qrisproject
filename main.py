@@ -18,8 +18,9 @@ from config import Config
 from data import ParquetDataLoader, YFinanceDataLoader
 from indicator import SuperTrendIndicator, TrendScoreIndicator
 from report import HTMLReporter
-from strategy import (RegimeGatedTrendScoreStrategy, SMASlopeROCStrategy, Strategy,
-                      SuperTrendSwingStrategy, TrendScoreSwingStrategy)
+from strategy import (RegimeGatedTrendScoreStrategy, RegimeTrendRiderStrategy,
+                      SMASlopeROCStrategy, Strategy, SuperTrendSwingStrategy,
+                      TrendScoreSwingStrategy)
 
 
 class Pipeline:
@@ -73,6 +74,9 @@ class Pipeline:
             strategies.append(SMASlopeROCStrategy(
                 sma_len=20, roc_len=10, roc_smooth=3, roc_slope_len=1, roc_th=0.0,
                 slope_enter_th=0.03, slope_exit_th=-0.03))
+        if self.cfg.use_trendrider:
+            # 3조 regime-trendrider v4 (EMA20/60 국면 + ADX>10, 샹들리에·B1 선제청산)
+            strategies.append(RegimeTrendRiderStrategy())
         return strategies
 
     def _make_regime_ts(self) -> RegimeGatedTrendScoreStrategy:

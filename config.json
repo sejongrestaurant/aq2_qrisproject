@@ -54,7 +54,8 @@
     "trend_score_base": false,
     "supertrend": true,
     "regime_ts": false,
-    "sma_slope": true
+    "sma_slope": true,
+    "trendrider": true
   },
 
   "supertrend": {
