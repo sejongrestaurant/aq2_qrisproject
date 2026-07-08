@@ -78,7 +78,8 @@ class RegimeTrendRiderStrategy(Strategy):
         is_down = (ema_fast < ema_slow) & (adx > self.adx_trend)
         crossover = (close > ema_fast) & (close.shift(1) <= ema_fast.shift(1))
 
-        entry = is_up & ((~is_up.shift(1).fillna(False)) | crossover)   # 상승전환 또는 EMA20 돌파
+        prev_up = is_up.shift(1, fill_value=False)                      # bool dtype 보존(~ 정상 동작)
+        entry = is_up & ((~prev_up) | crossover)                        # 상승전환 또는 EMA20 돌파
         exit_ = ((close < chand) | is_down                              # 샹들리에 이탈 · 하락국면
                  | ((ema_fast < ema_fast.shift(self.slope_lb)) & (close < ema_fast)))  # B1 선제청산
 

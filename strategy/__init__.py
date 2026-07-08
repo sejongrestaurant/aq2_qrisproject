@@ -10,6 +10,8 @@ from .swing_supertrend import SuperTrendSwingStrategy
 from .swing_regime_trend_score import RegimeGatedTrendScoreStrategy
 from .swing_sma_slope import SMASlopeROCStrategy
 from .swing_regime_trendrider import RegimeTrendRiderStrategy
+from .swing_team1_regime import Team1RegimeStrategy
 
 __all__ = ["Strategy", "Signals", "TrendScoreSwingStrategy", "SuperTrendSwingStrategy",
-           "RegimeGatedTrendScoreStrategy", "SMASlopeROCStrategy", "RegimeTrendRiderStrategy"]
+           "RegimeGatedTrendScoreStrategy", "SMASlopeROCStrategy", "RegimeTrendRiderStrategy",
+           "Team1RegimeStrategy"]

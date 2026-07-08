@@ -20,7 +20,7 @@ from indicator import SuperTrendIndicator, TrendScoreIndicator
 from report import HTMLReporter
 from strategy import (RegimeGatedTrendScoreStrategy, RegimeTrendRiderStrategy,
                       SMASlopeROCStrategy, Strategy, SuperTrendSwingStrategy,
-                      TrendScoreSwingStrategy)
+                      Team1RegimeStrategy, TrendScoreSwingStrategy)
 
 
 class Pipeline:
@@ -77,6 +77,9 @@ class Pipeline:
         if self.cfg.use_trendrider:
             # 3조 regime-trendrider v4 (EMA20/60 국면 + ADX>10, 샹들리에·B1 선제청산)
             strategies.append(RegimeTrendRiderStrategy())
+        if self.cfg.use_team1:
+            # 1조 국면·시점 (200EMA+SuperTrend 국면, %R 회복 진입, ATR 고정손절)
+            strategies.append(Team1RegimeStrategy())
         return strategies
 
     def _make_regime_ts(self) -> RegimeGatedTrendScoreStrategy:

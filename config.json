@@ -55,7 +55,8 @@
     "supertrend": true,
     "regime_ts": false,
     "sma_slope": true,
-    "trendrider": true
+    "trendrider": true,
+    "team1": true
   },
 
   "supertrend": {
