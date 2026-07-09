@@ -18,6 +18,7 @@ from backtest import Backtester
 from config import Config
 from data import ParquetDataLoader, YFinanceDataLoader
 from indicator import SuperTrendIndicator, TrendScoreIndicator
+from portfolio import PortfolioBacktester, PortfolioConfig
 from report import HTMLReporter
 from strategy import (RegimeGatedTrendScoreStrategy, RegimeTrendRiderStrategy,
                       SMASlopeROCStrategy, Strategy, SuperTrendSwingStrategy,
@@ -145,6 +146,8 @@ class Pipeline:
                             f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
                             f"MDD {m['mdd_pct']:>6.1f}%  거래 {m['n_trades']:>3}")
 
+        self._run_portfolio(results)  # 활성화 시 자산배분 포트폴리오 결과를 추가
+
         if not results:
             raise RuntimeError("백테스트된 종목이 없습니다. data_dir/universe 를 확인하세요.")
 
@@ -154,6 +157,34 @@ class Pipeline:
         logger.info(f"리포트 생성: {path}")
         self._print_universe_summary(results)
         return path
+
+    def _run_portfolio(self, results: list) -> None:
+        """config/portfolio.json 이 활성화돼 있으면 자산배분 포트폴리오를 백테스트해 결과에 추가한다.
+
+        설정이 없거나 enabled=false 면 조용히 건너뛴다. 실패해도 나머지 리포트를 막지 않도록
+        예외를 잡아 로그만 남긴다.
+        """
+        pcfg = PortfolioConfig.load()
+        if not pcfg.enabled:
+            logger.info("포트폴리오 백테스트 비활성(portfolio.enabled=false 또는 설정 파일 없음)")
+            return
+
+        logger.info(f"포트폴리오 '{pcfg.name}' · {len(pcfg.holdings)}종목 · {pcfg.rebalance.describe()}")
+        backtester = PortfolioBacktester(loader=self.loader, cost=self.cfg.cost)
+        try:
+            # 구간은 백테스트 공통 설정(config.json 의 data.start/end)을 따른다. 값이 비어(None)
+            # 있으면 보유 종목이 모두 상장된 시점(가장 늦은 종목 기준)부터 최근 공통 거래일까지 자동 사용.
+            result = backtester.run(pcfg, start=self.cfg.start, end=self.cfg.end)
+        except Exception as exc:  # noqa: BLE001 — 포트폴리오 실패가 전체 리포트를 막지 않도록
+            logger.error(f"포트폴리오 백테스트 실패 → 생략 ({exc})")
+            return
+
+        results.append(result)
+        m = result.metrics["strategy"]
+        b = result.metrics["benchmark"]
+        logger.info(f"{result.code:<5} {result.strategy_name:<26} 총수익 {m['total_return_pct']:>7.1f}%  "
+                    f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
+                    f"MDD {m['mdd_pct']:>6.1f}%  (vs 무리밸런싱 CAGR {b['cagr_pct']:.1f}%)")
 
     def _print_universe_summary(self, results) -> None:
         """콘솔에 전략별 유니버스 평균(CAGR·Sharpe·MDD)을 출력한다."""

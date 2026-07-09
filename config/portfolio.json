@@ -1,0 +1,35 @@
+{
+  "_comment": "자산배분 포트폴리오 정의. 코드 수정 없이 이 파일만 바꿔 종목·비중·리밸런싱을 조정한다.",
+  "_off_options": [
+    "enabled=false            → 포트폴리오 백테스트 자체를 건너뜀",
+    "rebalance.enabled=false  → 리밸런싱 없이 초기 비중 매수후보유(드리프트 허용)",
+    "rebalance.period=\"none\"  → 주기 리밸런싱만 끔(임계 리밸런싱은 유지)",
+    "rebalance.threshold=0    → 임계(드리프트) 리밸런싱만 끔(주기 리밸런싱은 유지)"
+  ],
+
+  "enabled": true,
+  "name": "글로벌 자산배분 10",
+
+  "_range_comment": "백테스트 구간은 config.json 의 data.start/end 를 따른다(백테스트 공통 설정). 비워두면 가장 늦게 상장된 종목의 시작일~최근 공통일을 자동 사용.",
+
+  "_holdings_comment": "종목:비중(합=1.0 권장, 아니면 자동 재정규화). 비중을 모두 null 로 두거나 리스트로 주면 동일가중.",
+  "holdings": {
+    "QQQ": 0.10,
+    "SPY": 0.10,
+    "GLD": 0.10,
+    "VNQ": 0.10,
+    "USO": 0.10,
+    "TLT": 0.10,
+    "EWY": 0.10,
+    "VGK": 0.10,
+    "MCHI": 0.10,
+    "DIA": 0.10
+  },
+
+  "rebalance": {
+    "_comment": "period: M(월)·Q(분기)·Y(연)·W(주)·\"<N>D\"(N거래일)·\"none\". threshold: 목표비중 대비 절대편차(0.05=5%p), 0이면 끔.",
+    "enabled": true,
+    "period": "Q",
+    "threshold": 0.05
+  }
+}
