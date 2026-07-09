@@ -17,10 +17,11 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from backtest import BacktestResult, Trade
+from backtest import BacktestResult
 from data import DataLoader
 
 from .config import PortfolioConfig, RebalanceConfig
+from .schedule import period_mask, segment_trades
 
 logger = logging.getLogger(__name__)
 
@@ -104,12 +105,12 @@ class PortfolioBacktester:
         """
         tickers = list(closes.columns)
         w_target = np.array([weights[t] for t in tickers], dtype=float)
-        rets = closes.pct_change().fillna(0.0).to_numpy()  # 일간 종목수익 행렬
+        rets = closes.pct_change(fill_method=None).fillna(0.0).to_numpy()  # 일간 종목수익 행렬
         dates = closes.index
         n = len(dates)
 
         # 주기(달력) 리밸런싱 날짜 마스크(리밸런싱 꺼져 있으면 전부 False)
-        periodic = (self._periodic_mask(dates, rb.period)
+        periodic = (period_mask(dates, rb.period)
                     if rb.enabled else np.zeros(n, dtype=bool))
         thr = rb.threshold if rb.enabled else None
 
@@ -139,72 +140,12 @@ class PortfolioBacktester:
         return pd.Series(eq, index=dates, name="equity"), rb_dates
 
     @staticmethod
-    def _periodic_mask(dates: pd.DatetimeIndex, period: str | None) -> np.ndarray:
-        """주기 리밸런싱이 일어나는 날(각 주기의 첫 거래일)을 True 로 표시한다.
-
-        period: "M"·"Q"·"Y"·"W" 는 해당 달력 단위가 바뀌는 첫 거래일, "<N>D" 는 N거래일마다.
-        None/미지원 값이면 전부 False(주기 리밸런싱 없음).
-        """
-        n = len(dates)
-        mask = np.zeros(n, dtype=bool)
-        if not period:
-            return mask
-
-        # "<N>D": N거래일 간격
-        if period.endswith("D") and period[:-1].isdigit():
-            step = int(period[:-1])
-            if step > 0:
-                mask[step::step] = True
-            return mask
-
-        # 달력 경계(월/분기/연/주)로 그룹키를 만들고, 키가 바뀌는 첫 거래일을 표시
-        key_fn = {
-            "M": lambda d: (d.year, d.month),
-            "Q": lambda d: (d.year, (d.month - 1) // 3),
-            "Y": lambda d: (d.year,),
-            "A": lambda d: (d.year,),
-            "W": lambda d: d.isocalendar()[:2],  # (ISO 연도, ISO 주차)
-        }.get(period)
-        if key_fn is None:
-            logger.warning(f"알 수 없는 리밸런싱 주기 '{period}' → 주기 리밸런싱 없이 진행")
-            return mask
-
-        prev = None
-        for i, d in enumerate(dates):
-            k = key_fn(d)
-            if prev is not None and k != prev:
-                mask[i] = True
-            prev = k
-        return mask
-
-    @staticmethod
     def _buy_and_hold(closes: pd.DataFrame, weights: Dict[str, float]) -> pd.Series:
         """벤치마크: 초기 비중으로 사서 **리밸런싱 없이 보유**한 자산곡선(시작 1.0)."""
         norm = closes / closes.iloc[0]                       # 종목별 정규화(시작 1.0)
         w = np.array([weights[t] for t in closes.columns])
         bh = (norm.to_numpy() * w).sum(axis=1)
         return pd.Series(bh, index=closes.index, name="buy_and_hold")
-
-    @staticmethod
-    def _rebalance_trades(equity: pd.Series, rb_dates: List[pd.Timestamp]) -> List[Trade]:
-        """리밸런싱 구간을 각각 하나의 보유거래로 기록한다(리포트 거래 테이블·활동 집계용).
-
-        연속한 리밸런싱 시점(과 시작/종료)을 경계로 자산곡선을 구간 분할하고, 각 구간을
-        entry~exit 로 보는 `Trade` 를 만든다. ret 은 그 구간의 포트폴리오 수익률(리밸런싱 비용
-        반영 후). 마지막 구간은 청산 사유 'eod', 나머지는 '리밸런싱'.
-        """
-        idx = equity.index
-        # 경계 = 시작 + (양끝과 겹치지 않는) 리밸런싱일 + 종료
-        bounds = [idx[0]] + [d for d in rb_dates if d not in (idx[0], idx[-1])] + [idx[-1]]
-        trades: List[Trade] = []
-        for a, b in zip(bounds[:-1], bounds[1:]):
-            pa, pb = idx.get_loc(a), idx.get_loc(b)
-            eq_a, eq_b = float(equity.iloc[pa]), float(equity.iloc[pb])
-            trades.append(Trade(
-                entry_date=a, exit_date=b, entry_px=eq_a, exit_px=eq_b,
-                ret=eq_b / eq_a - 1.0, bars_held=pb - pa,
-                exit_reason=("eod" if b == idx[-1] else "리밸런싱")))
-        return trades
 
     # ── 결과 포장 ───────────────────────────────────────────────────
     def _to_result(self, pcfg: PortfolioConfig, closes: pd.DataFrame,
@@ -228,7 +169,7 @@ class PortfolioBacktester:
             name=pcfg.name,
             equity=equity,
             benchmark=benchmark,
-            trades=self._rebalance_trades(equity, rb_dates),
+            trades=segment_trades(equity, rb_dates, reason="리밸런싱"),
             price=price_df,
             target_long=target_long,
             indicators={},
