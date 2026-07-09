@@ -29,3 +29,9 @@ htmlcov/
 *.swp
 .DS_Store
 Thumbs.db
+
+# ── 프로젝트 산출물·데이터(재생성 가능) ─────────────────────────
+# 백테스트가 생성하는 HTML 리포트(main.py 실행 시 재생성)
+reports/
+# yfinance OHLCV 캐시(config.cache=true 로 재다운로드 가능)
+datasets/ohlcv/*.parquet
