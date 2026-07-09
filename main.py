@@ -172,7 +172,14 @@ class Pipeline:
             return
 
         logger.info(f"포트폴리오 '{pcfg.name}' · {len(pcfg.holdings)}종목 · {pcfg.rebalance.describe()}")
-        backtester = PortfolioBacktester(loader=self.loader, cost=self.cfg.cost)
+        # 비중 틸트(TrendScore 시그모이드)용 지표를 config 파라미터로 만들어 주입한다.
+        ts = self.cfg.trend_score
+        indicator = TrendScoreIndicator(
+            min_len=ts.min_len, rsi_period=ts.rsi_period, adx_period=ts.adx_period,
+            ewmac_weight=ts.ewmac_weight, tsmom_weight=ts.tsmom_weight,
+            rsi_weight=ts.rsi_weight, adx_penalty_max=ts.adx_penalty_max,
+            adx_full_strength=ts.adx_full_strength, smooth_span=ts.smooth_span)
+        backtester = PortfolioBacktester(loader=self.loader, cost=self.cfg.cost, indicator=indicator)
         try:
             # 구간은 백테스트 공통 설정(config.json 의 data.start/end)을 따른다. 값이 비어(None)
             # 있으면 보유 종목이 모두 상장된 시점(가장 늦은 종목 기준)부터 최근 공통 거래일까지 자동 사용.

@@ -31,5 +31,15 @@
     "enabled": true,
     "period": "Q",
     "threshold": 0.05
+  },
+
+  "weighting": {
+    "_comment": "각 종목 기본비중에 TrendScore 시그모이드 배수를 곱해 재정규화. method=none 이면 고정비중.",
+    "_shape": "배수 = min + (max-min)/(1+exp(-steepness*(TrendScore-center))). 점수=center 면 (min+max)/2, 높을수록 max, 낮을수록 min.",
+    "method": "trend_score_sigmoid",
+    "center": 45,
+    "min": 0.3,
+    "max": 3.0,
+    "steepness": 0.1
   }
 }

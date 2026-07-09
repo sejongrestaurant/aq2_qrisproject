@@ -19,8 +19,9 @@ import pandas as pd
 
 from backtest import BacktestResult
 from data import DataLoader
+from indicator import Indicator
 
-from .config import PortfolioConfig, RebalanceConfig
+from .config import PortfolioConfig, RebalanceConfig, WeightingConfig
 from .schedule import period_mask, segment_trades
 
 logger = logging.getLogger(__name__)
@@ -32,11 +33,15 @@ class PortfolioBacktester:
     Args (생성자):
         loader: 종목 시세를 표준 스키마로 읽는 `DataLoader`(parquet·yfinance 등).
         cost: 왕복 거래비용 비율(예 0.0010 = 0.10%). 리밸런싱 회전율에 비례해 차감.
+        indicator: 비중 틸트용 지표(예: `TrendScoreIndicator`). weighting.method 가
+                  "trend_score_sigmoid" 일 때만 쓰인다. None 이면 틸트가 켜져도 고정비중으로 폴백.
     """
 
-    def __init__(self, loader: DataLoader, cost: float = 0.0010):
+    def __init__(self, loader: DataLoader, cost: float = 0.0010,
+                 indicator: Indicator | None = None):
         self.loader = loader
         self.cost = cost
+        self.indicator = indicator
 
     # ── public ──────────────────────────────────────────────────────
     def run(self, pcfg: PortfolioConfig, start=None, end=None) -> BacktestResult:
@@ -50,14 +55,23 @@ class PortfolioBacktester:
         """
         prices, weights = self._load_prices(pcfg.holdings)
         closes = self._align_closes(prices, start, end)
+        scores = self._align_scores(prices, closes) if self._tilt_on(pcfg.weighting) else None
 
-        equity, rb_dates = self._simulate(closes, weights, pcfg.rebalance)
+        equity, rb_dates = self._simulate(closes, weights, pcfg.rebalance, pcfg.weighting, scores)
         benchmark = self._buy_and_hold(closes, weights)
 
+        tilt = pcfg.weighting.describe() if self._tilt_on(pcfg.weighting) else "고정비중"
         logger.info(f"포트폴리오 시뮬레이션 · {len(closes.columns)}종목 · "
                     f"{closes.index[0]:%Y-%m-%d}~{closes.index[-1]:%Y-%m-%d} · "
-                    f"리밸런싱 {len(rb_dates)}회")
+                    f"리밸런싱 {len(rb_dates)}회 · {tilt}")
         return self._to_result(pcfg, closes, weights, equity, benchmark, rb_dates)
+
+    def _tilt_on(self, wcfg: WeightingConfig) -> bool:
+        """비중 틸트를 실제로 적용할지(설정이 켜져 있고 지표가 주입됐는지)."""
+        if wcfg.enabled and self.indicator is None:
+            logger.warning("weighting 이 켜져 있으나 지표가 없어 고정비중으로 진행합니다.")
+            return False
+        return wcfg.enabled
 
     # ── 데이터 준비 ─────────────────────────────────────────────────
     def _load_prices(self, holdings: Dict[str, float]) -> Tuple[Dict, Dict[str, float]]:
@@ -92,20 +106,31 @@ class PortfolioBacktester:
             raise ValueError("포트폴리오: 공통 거래일이 부족합니다(종목 구간이 겹치지 않음).")
         return closes
 
+    def _align_scores(self, prices: Dict, closes: pd.DataFrame) -> pd.DataFrame:
+        """보유 종목별 지표점수를 종가 날짜축에 맞춰 정렬한다(비중 틸트용).
+
+        지표는 각 종목 전체 시세로 계산(워밍업 반영)한 뒤 백테스트 구간으로 재정렬한다.
+        """
+        cols = {c: self.indicator.compute(prices[c].df) for c in closes.columns}
+        return pd.DataFrame(cols).reindex(index=closes.index, columns=closes.columns)
+
     # ── 시뮬레이션 ──────────────────────────────────────────────────
-    def _simulate(self, closes: pd.DataFrame, weights: Dict[str, float],
-                  rb: RebalanceConfig) -> Tuple[pd.Series, List[pd.Timestamp]]:
+    def _simulate(self, closes: pd.DataFrame, weights: Dict[str, float], rb: RebalanceConfig,
+                  wcfg: WeightingConfig, scores: pd.DataFrame | None
+                  ) -> Tuple[pd.Series, List[pd.Timestamp]]:
         """비중 합성 자산곡선 + 리밸런싱 시뮬레이션.
 
         각 종목 가치를 일간수익으로 굴리고, 주기·임계 트리거가 걸리면 목표비중으로 되돌린다.
+        비중 틸트가 켜져 있으면 리밸런싱 시점의 지표점수로 목표비중을 재산정한다(시그모이드 배수).
         리밸런싱 시 회전율(단방향)에 비례해 왕복비용을 차감한다.
 
         Returns:
             (equity: 시작 1.0 자산곡선, rb_dates: 실제 리밸런싱이 일어난 날짜 리스트).
         """
         tickers = list(closes.columns)
-        w_target = np.array([weights[t] for t in tickers], dtype=float)
+        base_w = np.array([weights[t] for t in tickers], dtype=float)
         rets = closes.pct_change(fill_method=None).fillna(0.0).to_numpy()  # 일간 종목수익 행렬
+        S = scores.to_numpy(dtype=float) if scores is not None else None    # 지표점수 행렬(틸트용)
         dates = closes.index
         n = len(dates)
 
@@ -114,7 +139,14 @@ class PortfolioBacktester:
                     if rb.enabled else np.zeros(n, dtype=bool))
         thr = rb.threshold if rb.enabled else None
 
-        value = w_target.copy()          # 자산별 가치(첫날 목표비중, 합=1.0)
+        def target_at(i: int) -> np.ndarray:
+            """i일 목표비중: 틸트가 꺼져 있으면 기본비중, 켜져 있으면 점수 시그모이드로 틸트."""
+            if S is None:
+                return base_w
+            return self._tilt_weights(base_w, S[i], wcfg)
+
+        w_target = target_at(0)          # 첫날 목표비중(틸트 시 첫날 점수 반영)
+        value = w_target.copy()          # 자산별 가치(합=1.0)
         eq = np.empty(n)
         rb_dates: List[pd.Timestamp] = []
 
@@ -126,18 +158,35 @@ class PortfolioBacktester:
 
             # 리밸런싱 판단(첫날은 이미 목표비중이라 제외)
             if i > 0 and rb.enabled:
-                drift = np.abs(w_now - w_target)
+                drift = np.abs(w_now - w_target)   # 마지막 목표 대비 이탈
                 trigger = periodic[i] or (thr is not None and drift.max() > thr)
                 if trigger:
-                    # 회전율(단방향) = 목표로 되돌리며 사고파는 비중의 절반.
+                    w_target = target_at(i)        # 틸트 시 현재 점수로 목표 재산정
+                    # 회전율(단방향) = 목표로 옮기며 사고파는 비중의 절반.
                     # 왕복비용을 회전 비중에 비례해 차감(간이 마찰 모델).
-                    turnover = 0.5 * drift.sum()
+                    turnover = 0.5 * np.abs(w_now - w_target).sum()
                     total *= (1.0 - self.cost * turnover)
                     value = w_target * total       # 목표비중 복원
                     rb_dates.append(dates[i])
             eq[i] = total
 
         return pd.Series(eq, index=dates, name="equity"), rb_dates
+
+    @staticmethod
+    def _tilt_weights(base_w: np.ndarray, scores_row: np.ndarray,
+                      wcfg: WeightingConfig) -> np.ndarray:
+        """기본비중 × 점수 시그모이드 배수 → 합=1 재정규화한 목표비중.
+
+        배수 = min + (max-min)/(1+exp(-steepness*(점수-center))). 점수=center 면 (min+max)/2,
+        점수가 높을수록 max·낮을수록 min 에 수렴. 점수가 NaN(워밍업/결측)인 종목은 배수 1.0(중립).
+        """
+        x = np.nan_to_num(scores_row, nan=wcfg.center)  # NaN 은 지수 계산용으로 center 대입
+        mult = wcfg.min_mult + (wcfg.max_mult - wcfg.min_mult) / (
+            1.0 + np.exp(-wcfg.steepness * (x - wcfg.center)))
+        mult = np.where(np.isnan(scores_row), 1.0, mult)  # 실제 NaN 종목은 중립 배수
+        tilted = base_w * mult
+        s = tilted.sum()
+        return tilted / s if s > 0 else base_w
 
     @staticmethod
     def _buy_and_hold(closes: pd.DataFrame, weights: Dict[str, float]) -> pd.Series:
@@ -163,9 +212,10 @@ class PortfolioBacktester:
             index=closes.index)
         target_long = pd.Series(True, index=closes.index)
 
+        tilt = f" · {pcfg.weighting.describe()}" if self._tilt_on(pcfg.weighting) else ""
         return BacktestResult(
             code="PORTFOLIO",
-            strategy_name=f"{len(weights)}종목 {pcfg.rebalance.describe()}",
+            strategy_name=f"{len(weights)}종목 {pcfg.rebalance.describe()}{tilt}",
             name=pcfg.name,
             equity=equity,
             benchmark=benchmark,
