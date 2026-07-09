@@ -17,7 +17,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from backtest import BacktestResult
+from backtest import BacktestResult, Trade
 from data import DataLoader
 
 from .config import PortfolioConfig, RebalanceConfig
@@ -56,7 +56,7 @@ class PortfolioBacktester:
         logger.info(f"포트폴리오 시뮬레이션 · {len(closes.columns)}종목 · "
                     f"{closes.index[0]:%Y-%m-%d}~{closes.index[-1]:%Y-%m-%d} · "
                     f"리밸런싱 {len(rb_dates)}회")
-        return self._to_result(pcfg, closes, weights, equity, benchmark)
+        return self._to_result(pcfg, closes, weights, equity, benchmark, rb_dates)
 
     # ── 데이터 준비 ─────────────────────────────────────────────────
     def _load_prices(self, holdings: Dict[str, float]) -> Tuple[Dict, Dict[str, float]]:
@@ -185,15 +185,36 @@ class PortfolioBacktester:
         bh = (norm.to_numpy() * w).sum(axis=1)
         return pd.Series(bh, index=closes.index, name="buy_and_hold")
 
+    @staticmethod
+    def _rebalance_trades(equity: pd.Series, rb_dates: List[pd.Timestamp]) -> List[Trade]:
+        """리밸런싱 구간을 각각 하나의 보유거래로 기록한다(리포트 거래 테이블·활동 집계용).
+
+        연속한 리밸런싱 시점(과 시작/종료)을 경계로 자산곡선을 구간 분할하고, 각 구간을
+        entry~exit 로 보는 `Trade` 를 만든다. ret 은 그 구간의 포트폴리오 수익률(리밸런싱 비용
+        반영 후). 마지막 구간은 청산 사유 'eod', 나머지는 '리밸런싱'.
+        """
+        idx = equity.index
+        # 경계 = 시작 + (양끝과 겹치지 않는) 리밸런싱일 + 종료
+        bounds = [idx[0]] + [d for d in rb_dates if d not in (idx[0], idx[-1])] + [idx[-1]]
+        trades: List[Trade] = []
+        for a, b in zip(bounds[:-1], bounds[1:]):
+            pa, pb = idx.get_loc(a), idx.get_loc(b)
+            eq_a, eq_b = float(equity.iloc[pa]), float(equity.iloc[pb])
+            trades.append(Trade(
+                entry_date=a, exit_date=b, entry_px=eq_a, exit_px=eq_b,
+                ret=eq_b / eq_a - 1.0, bars_held=pb - pa,
+                exit_reason=("eod" if b == idx[-1] else "리밸런싱")))
+        return trades
+
     # ── 결과 포장 ───────────────────────────────────────────────────
     def _to_result(self, pcfg: PortfolioConfig, closes: pd.DataFrame,
                    weights: Dict[str, float], equity: pd.Series,
-                   benchmark: pd.Series) -> BacktestResult:
+                   benchmark: pd.Series, rb_dates: List[pd.Timestamp]) -> BacktestResult:
         """자산곡선을 기존 `BacktestResult` 로 감싼다(리포트·지표 재사용).
 
         · price: 가격 패널에 '리밸런싱 없는 바스켓(벤치마크)' 곡선을 실어 대비를 보여준다.
         · target_long: 포트폴리오는 항상 전액 투자이므로 전 구간 True(노출 100%).
-        · trades: 개별 왕복거래 개념이 없어 빈 리스트(리밸런싱 횟수는 로그로 표기).
+        · trades: 리밸런싱 구간별 보유거래(개별 왕복거래 대신 리밸런싱 활동을 표현).
         """
         bench_vals = benchmark.to_numpy()
         price_df = pd.DataFrame(
@@ -207,7 +228,7 @@ class PortfolioBacktester:
             name=pcfg.name,
             equity=equity,
             benchmark=benchmark,
-            trades=[],
+            trades=self._rebalance_trades(equity, rb_dates),
             price=price_df,
             target_long=target_long,
             indicators={},
