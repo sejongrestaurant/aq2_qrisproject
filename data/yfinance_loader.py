@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import logging
 import math
 import os
 from datetime import datetime, timedelta
@@ -16,6 +17,8 @@ from typing import Optional
 import pandas as pd
 
 from .loader import DataLoader, PriceData
+
+logger = logging.getLogger(__name__)
 
 # 거래일→달력일 환산(연 ~252거래일) + 안전마진. warmup_bars 거래일을 확보하기 위한 달력 버퍼 계수.
 _CAL_PER_TRADING = 365.0 / 252.0
@@ -62,7 +65,7 @@ class YFinanceDataLoader(DataLoader):
             cached = self._load_cache(code)
             if cached is None:
                 raise RuntimeError(f"{code}: yfinance 다운로드 실패, 캐시도 없음 ({exc})") from exc
-            print(f"[yfinance] {code} 다운로드 실패 → 캐시 사용 ({exc})")
+            logger.warning(f"{code} 다운로드 실패 → 캐시 사용 ({exc})")
             df = cached
         return PriceData(code=code, df=df)
 

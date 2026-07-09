@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import logging
 from typing import List
 
 from backtest import Backtester
@@ -21,6 +22,8 @@ from report import HTMLReporter
 from strategy import (RegimeGatedTrendScoreStrategy, RegimeTrendRiderStrategy,
                       SMASlopeROCStrategy, Strategy, SuperTrendSwingStrategy,
                       Team1RegimeStrategy, TrendScoreSwingStrategy)
+
+logger = logging.getLogger(__name__)
 
 
 class Pipeline:
@@ -43,8 +46,8 @@ class Pipeline:
         """config.source 에 맞는 시세 로더를 생성한다(parquet | yfinance)."""
         if self.cfg.source == "yfinance":
             warmup = max(self.cfg.warmup_bars, self.cfg.trend_score.min_len)
-            print(f"[data] yfinance 소스 · 워밍업 {warmup}봉 선확보 · "
-                  f"구간 {self.cfg.start or '전체'}~{self.cfg.end or '최신'}")
+            logger.info(f"yfinance 소스 · 워밍업 {warmup}봉 선확보 · "
+                        f"구간 {self.cfg.start or '전체'}~{self.cfg.end or '최신'}")
             return YFinanceDataLoader(
                 start=self.cfg.start, end=self.cfg.end, warmup_bars=warmup,
                 cache_dir=self.cfg.data_dir if self.cfg.cache else None)
@@ -120,7 +123,7 @@ class Pipeline:
     def run(self) -> str:
         """유니버스 × 활성전략을 백테스트하고 비교 HTML 리포트를 생성해 경로를 반환한다."""
         names = " vs ".join(s.name for s in self.strategies)
-        print(f"[run] 전략: {names}\n")
+        logger.info(f"전략: {names}")
 
         results = []
         for code in self.cfg.codes:
@@ -128,19 +131,19 @@ class Pipeline:
                 price = self.loader.load(code)
                 price.name = self.cfg.universe.get(code)  # config 표시명을 리포트에 반영
             except Exception as exc:  # noqa: BLE001
-                print(f"[skip] {code}: 로드 실패 ({exc})")
+                logger.error(f"{code}: 로드 실패 → 건너뜀 ({exc})")
                 continue
             if len(price) < self.cfg.min_bars:
-                print(f"[skip] {code}: 데이터 부족 ({len(price)} < {self.cfg.min_bars})")
+                logger.warning(f"{code}: 데이터 부족으로 건너뜀 ({len(price)} < {self.cfg.min_bars})")
                 continue
 
             for strat in self.strategies:
                 result = self.engine.run(price, strat, start=self.cfg.start, end=self.cfg.end)
                 results.append(result)
                 m = result.metrics["strategy"]
-                print(f"[ok]   {code:<5} {strat.name:<26} 총수익 {m['total_return_pct']:>7.1f}%  "
-                      f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
-                      f"MDD {m['mdd_pct']:>6.1f}%  거래 {m['n_trades']:>3}")
+                logger.info(f"{code:<5} {strat.name:<26} 총수익 {m['total_return_pct']:>7.1f}%  "
+                            f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
+                            f"MDD {m['mdd_pct']:>6.1f}%  거래 {m['n_trades']:>3}")
 
         if not results:
             raise RuntimeError("백테스트된 종목이 없습니다. data_dir/universe 를 확인하세요.")
@@ -148,7 +151,7 @@ class Pipeline:
         path = self.reporter.generate(
             results, self.cfg.out_path,
             title="일봉 스윙 전략 비교 — TrendScore vs SuperTrend")
-        print(f"\n리포트 생성: {path}")
+        logger.info(f"리포트 생성: {path}")
         self._print_universe_summary(results)
         return path
 
@@ -158,25 +161,45 @@ class Pipeline:
         by_strat: dict = {}
         for r in results:
             by_strat.setdefault(r.strategy_name, []).append(r.metrics["strategy"])
-        bh = [r.metrics["benchmark"] for r in results]
-        print("\n=== 유니버스 평균 ===")
-        print(f"{'전략':<26}{'CAGR%':>8}{'Sharpe':>8}{'MDD%':>8}")
+        logger.info("=== 유니버스 평균 ===")
+        logger.info(f"{'전략':<26}{'CAGR%':>8}{'Sharpe':>8}{'MDD%':>8}")
         for name, ms in by_strat.items():
-            print(f"{name:<26}{np.mean([m['cagr_pct'] for m in ms]):>8.1f}"
-                  f"{np.mean([m['sharpe'] for m in ms]):>8.2f}"
-                  f"{np.mean([m['mdd_pct'] for m in ms]):>8.1f}")
+            logger.info(f"{name:<26}{np.mean([m['cagr_pct'] for m in ms]):>8.1f}"
+                        f"{np.mean([m['sharpe'] for m in ms]):>8.2f}"
+                        f"{np.mean([m['mdd_pct'] for m in ms]):>8.1f}")
         # B&H 는 종목당 전략수만큼 중복되므로 유니크 종목 기준 평균
         seen, uniq = set(), []
         for r in results:
             if r.code not in seen:
                 seen.add(r.code); uniq.append(r.metrics["benchmark"])
-        print(f"{'Buy&Hold':<26}{np.mean([m['cagr_pct'] for m in uniq]):>8.1f}"
-              f"{np.mean([m['sharpe'] for m in uniq]):>8.2f}"
-              f"{np.mean([m['mdd_pct'] for m in uniq]):>8.1f}")
+        logger.info(f"{'Buy&Hold':<26}{np.mean([m['cagr_pct'] for m in uniq]):>8.1f}"
+                    f"{np.mean([m['sharpe'] for m in uniq]):>8.2f}"
+                    f"{np.mean([m['mdd_pct'] for m in uniq]):>8.1f}")
+
+
+def setup_logging(level: int = logging.INFO) -> None:
+    """콘솔 핸들러와 사람이 읽기 좋은 포맷을 루트 로거에 1회 설정한다.
+
+    로그 초기화는 진입점(main)에서만 한다. 라이브러리성 모듈은 핸들러를 붙이지 않고
+    `logging.getLogger(__name__)` 로 얻은 로거로 메시지만 남긴다(중복 핸들러 방지).
+
+    Args:
+        level: 루트 로거 레벨. 상세 추적이 필요하면 logging.DEBUG 로 낮춘다.
+    """
+    root = logging.getLogger()
+    if root.handlers:  # 재실행·테스트에서 중복 초기화 방지
+        return
+    handler = logging.StreamHandler()
+    # 시각 · 레벨 · 모듈 · 메시지 순의 정렬된 포맷(모듈명이 기존 [config]/[data] 태그를 대체).
+    handler.setFormatter(logging.Formatter(
+        "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s", "%H:%M:%S"))
+    root.addHandler(handler)
+    root.setLevel(level)
 
 
 def main() -> None:
-    """config.json 을 로드해 파이프라인을 실행한다."""
+    """로깅을 초기화하고 config.json 을 로드해 파이프라인을 실행한다."""
+    setup_logging()
     Pipeline(Config.load()).run()
 
 
