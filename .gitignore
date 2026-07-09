@@ -1,0 +1,31 @@
+# ── Python ──────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 가상환경
+.venv/
+venv/
+env/
+ENV/
+
+# 패키징·빌드 산출물
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── 테스트·타입 캐시 ────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── 에디터·OS ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
