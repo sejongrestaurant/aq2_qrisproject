@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import os
 from typing import List
 
@@ -17,10 +18,44 @@ matplotlib.use("Agg")  # 화면 없는 환경에서 렌더링
 import matplotlib.dates as mdates  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from matplotlib import font_manager  # noqa: E402
 
 from backtest import BacktestResult  # noqa: E402
 
 from .base import Reporter  # noqa: E402
+
+logger = logging.getLogger(__name__)
+
+# 차트 제목·라벨에 쓰는 한글이 깨지지 않도록 한글 지원 폰트 후보(플랫폼별 우선순위)
+_KOREAN_FONTS = ["Malgun Gothic", "NanumGothic", "AppleGothic",
+                 "Noto Sans CJK KR", "Noto Sans KR"]
+
+
+def _configure_korean_font() -> None:
+    """한글 지원 폰트를 matplotlib sans-serif 최우선으로 등록한다(임포트 시 1회).
+
+    설치된 후보를 우선순위대로 찾아 sans-serif 목록 맨 앞에 두고, 기존 DejaVu Sans 등을 뒤에
+    남긴다. 이렇게 하면 한글은 한글 폰트로, 라틴·기타 글자는 폴백 폰트로 글리프 단위 렌더된다.
+    설치된 한글 폰트가 없으면 경고만 남기고 기본 폰트를 유지한다.
+    """
+    available = {f.name for f in font_manager.fontManager.ttflist}
+    korean = next((name for name in _KOREAN_FONTS if name in available), None)
+    if korean is None:
+        logger.warning("한글 지원 폰트를 찾지 못했습니다(%s) — 차트의 한글이 깨질 수 있습니다.",
+                       ", ".join(_KOREAN_FONTS))
+        return
+
+    base = list(plt.rcParams.get("font.sans-serif", []))
+    plt.rcParams["font.family"] = "sans-serif"
+    plt.rcParams["font.sans-serif"] = [korean] + [f for f in base if f != korean]
+    # 일반 마이너스(축 눈금 등)는 ASCII 하이픈으로 그린다(한글 폰트엔 − U+2212 글리프가 없음).
+    plt.rcParams["axes.unicode_minus"] = False
+    # 로그축 지수(10⁻¹ 등)의 수학 마이너스는 mathtext 경로라 폴백이 안 먹어 한글 폰트에서 경고를
+    # 쏟는다. 시각 영향이 거의 없는 벤치성 경고이므로 mathtext 로거만 조용히 시킨다.
+    logging.getLogger("matplotlib.mathtext").setLevel(logging.ERROR)
+
+
+_configure_korean_font()
 
 # 색상 팔레트(라이트 테마 기준, 접근성 고려한 대비)
 _C_STRAT = "#2563eb"   # 전략 곡선(파랑)
