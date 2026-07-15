@@ -64,23 +64,40 @@ DataLoader → SMASlopeROCStrategy(+ 비교 전략들) → Backtester → HTMLRe
   PriceData        Signals(target_long)             BacktestResult      HTML
 ```
 
-## 실행
+## 실행 방법
 
 ```bash
+# 1) 의존성 설치(최초 1회)
 pip install -r requirements.txt
+
+# 2) 실행 — config.json + config/*.json 을 읽어 전체 파이프라인을 돌린다
 python main.py
-# → reports/index.html (유니버스 비교표 + 링크)
-#   reports/<코드>.html (종목별 개별 리포트: 전체기간·연도별 성과 + 매수/매도 마커 차트)
+
+# 산출물
+# → reports/index.html      유니버스 비교표 + 각 종목/전략 페이지 링크
+#   reports/<코드>.html     종목/전략별 상세(성과 카드·연도별·차트·거래·로테이션 내역)
 ```
+
+- **재실행**: 코드 수정 없이 `config.json`·`config/*.json` 값만 바꾸고 `python main.py` 를 다시 돌리면 반영된다.
+- **데이터 소스**: 기본은 로컬 parquet(`config.json` 의 `data.source="parquet"`). 로컬에 없는 종목은
+  `"yfinance"` 로 바꾸면 온라인 다운로드하며, `data.cache=true` 면 `datasets/ohlcv/<코드>.parquet` 로 캐시된다
+  (다음 실행부터 오프라인 사용). 한국 종목/ETF 는 `.KS`/`.KQ` 로 받아 6자리 코드 parquet 로 저장한다.
+- **일부만 실행**: 각 전략은 설정에서 개별로 끌 수 있다 — `config.json` 의 `strategies.*` on/off,
+  자산배분은 `config/<전략>.json` 의 `enabled=false`(또는 파일 삭제 시 조용히 생략).
 
 리포트는 **종목별 개별 HTML** 이 생성되고, `index.html` 유니버스 비교표(종목 클릭 → 상세)로 연결된다.
 종목 페이지 상단에 **전략 비교**(내 지표 vs SuperTrend vs Buy&Hold 지표표 + 자산곡선 오버레이),
 그 아래 각 전략 상세(가격 + 매수▲/매도▼ 마커, 지표 패널, 연도별 성과)가 이어진다.
+자산배분(사테라이트·IRP) 페이지에는 **섹터 로테이션 내역**(교체 시점별 선정 종목, 신규 편입은 붉은색)도 실린다.
 표시명은 `config.json` 의 `universe` 값을 사용한다(예: `005930·삼성전자`).
 
-## 설정 (config.json)
+## 설정 변경 방법
 
-코드 수정 없이 **`config.json`** 값만 바꿔 재실행하면 반영된다(누락 키는 내장 기본값 폴백).
+설정은 두 갈래다. **스윙 전략 파이프라인**은 루트 `config.json`, **자산배분 전략**(포트폴리오·
+사테라이트·IRP)은 `config/*.json`. 모두 코드 수정 없이 값만 바꿔 재실행하면 반영된다(누락 키는 내장
+기본값 폴백, `_` 로 시작하는 키는 주석용으로 무시).
+
+### 1) 스윙 전략 파이프라인 — `config.json`
 
 | 섹션 | 키 | 설명 |
 |---|---|---|
@@ -98,9 +115,48 @@ python main.py
 > **대표 전략(SMASlopeROCStrategy)의 파라미터**(각도 문턱 ±0.03, ROC 10일·3봉평활 등)는 현재
 > `main.py`의 `Pipeline._build_strategies()`에 고정되어 있다. 켜고 끄는 것은 `strategies.sma_slope`.
 
-> **자산배분 전략**(포트폴리오·사테라이트·IRP)은 각각 `config/portfolio.json`·`config/satellite.json`·
-> `config/irp.json` 으로 설정하며 `enabled=false` 로 끌 수 있다(파일이 없으면 해당 전략은 조용히 생략).
-> IRP 는 채권 비중(`bonds`)·리밸런싱 주기(`rebalance_period`)·70% 슬리브(`satellite`)·구간(`start`/`end`)을 지정한다.
+### 2) 자산배분 전략 — `config/*.json`
+
+각 파일은 `enabled=false` 로 끄거나 파일을 지우면 해당 전략을 조용히 생략한다.
+
+| 파일 | 핵심 키 | 설명 |
+|---|---|---|
+| `config/portfolio.json` | `holdings`·`rebalance`·`weighting` | 고정비중 다자산 보유 + 주기/임계 리밸런싱(+TrendScore 비중 틸트) |
+| `config/satellite.json` | `top_n`·`check_period`·`entry_score`/`exit_score`·`trailing`·`cash_ticker`·`universe` | 점수 상위 Top-N 동일가중 모멘텀 로테이션 + 트레일링 스탑 + 빈 슬롯 현금대용 |
+| `config/irp.json` | `bonds`·`rebalance_period`·`satellite`·`start`/`end` | 채권 고정 + 70% 사테라이트 슬리브를 분기 리밸런싱(IRP) |
+
+**IRP 설정 예시** (`config/irp.json` — 채권 30% + 사테라이트 70%):
+
+```jsonc
+{
+  "enabled": true,
+  "rebalance_period": "Q",          // 상위 리밸런싱 주기: M/Q/Y
+  "start": "2020-01-01",            // IRP 전용 구간(글로벌·미국섹터 상장이 늦어 2020+ 권장)
+  "bonds": {                         // 채권 슬리브(각 비중, 합=채권 총배분). 사테라이트=1−합
+    "153130": 0.10, "114260": 0.10, "273130": 0.10
+  },
+  "satellite": {
+    "check_period": "M",            // 로테이션 주기
+    "top_n": 7,                      // 매 체크에서 채울 슬롯 수(동일가중)
+    "entry_score": 0, "exit_score": 0,  // TrendScore 편입/청산 문턱(0=게이트 끔·항상 채움)
+    "cash_ticker": "153130",        // 빈 슬롯 현금대용
+    "universe": ["379800", "379810", "..."]   // 후보 티커
+  }
+}
+```
+
+### 자주 하는 설정 변경 (레시피)
+
+| 하고 싶은 것 | 어디를 | 어떻게 |
+|---|---|---|
+| 백테스트 구간 변경 | `config.json` `data.start/end` (IRP는 `config/irp.json` `start/end`) | `"YYYY-MM-DD"` 지정 또는 `null`(전체/최신) |
+| 테스트 종목 추가·삭제 | `config.json` `universe` | `"코드": "표시명"` 줄 추가/삭제(로컬 parquet 없으면 `data.source="yfinance"`) |
+| 특정 전략만 실행 | `config.json` `strategies.*` / `config/*.json` `enabled` | 불필요한 항목 `false` |
+| IRP 채권 비중 조정 | `config/irp.json` `bonds` | 비중 합이 채권 총배분(예 40%면 각 0.13…) → 사테라이트=1−합 |
+| 로테이션 개수 변경 | `config/irp.json` `satellite.top_n` / `config/satellite.json` `top_n` | 정수(슬롯당 1/top_n 동일가중) |
+| 모멘텀 품질 필터 | `config/satellite.json` `entry_score`/`exit_score` | 진입≥/청산< TrendScore 문턱(히스테리시스). 0/0=끔 |
+| 트레일링 스탑 조정 | `config/satellite.json` `trailing.fixed_pcts` | 비교할 고정 후퇴 비율 목록(예 `[0.15, 0.07]`) |
+| 거래비용 변경 | `config.json` `backtest.cost` | 왕복 비율(예 0.0010=0.10%) |
 
 ### 워밍업 자동 확장
 
