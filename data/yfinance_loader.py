@@ -57,17 +57,32 @@ class YFinanceDataLoader(DataLoader):
         네트워크 실패 시 캐시(parquet)가 있으면 폴백한다.
         """
         fetch_start = self._fetch_start()
-        try:
-            df = self._download(code, fetch_start, self.end)
+        last_exc = None
+        df = None
+        for ticker in self._yahoo_candidates(code):
+            try:
+                df = self._download(ticker, fetch_start, self.end)
+                break
+            except Exception as exc:  # noqa: BLE001 — 다음 후보(.KS→.KQ)로 폴백
+                last_exc = exc
+        if df is not None:
             if self.cache_dir:
-                self._save_cache(code, df)
-        except Exception as exc:  # noqa: BLE001 — 오프라인/차단 시 캐시 폴백
+                self._save_cache(code, df)  # 캐시는 원 코드명으로 저장(파이프라인 호환)
+        else:
             cached = self._load_cache(code)
             if cached is None:
-                raise RuntimeError(f"{code}: yfinance 다운로드 실패, 캐시도 없음 ({exc})") from exc
-            logger.warning(f"{code} 다운로드 실패 → 캐시 사용 ({exc})")
+                raise RuntimeError(
+                    f"{code}: yfinance 다운로드 실패, 캐시도 없음 ({last_exc})") from last_exc
+            logger.warning(f"{code} 다운로드 실패 → 캐시 사용 ({last_exc})")
             df = cached
         return PriceData(code=code, df=df)
+
+    @staticmethod
+    def _yahoo_candidates(code: str) -> list:
+        """KRX 6자리 코드는 .KS → .KQ 순으로 시도, 미국 티커는 그대로."""
+        if len(code) == 6 and code.isalnum() and not code.isalpha():
+            return [f"{code}.KS", f"{code}.KQ"]
+        return [code]
 
     # ── 내부 ────────────────────────────────────────────────────────
     def _fetch_start(self) -> Optional[str]:
