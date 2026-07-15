@@ -1,20 +1,33 @@
 {
-  "_comment": "사테라이트(모멘텀 로테이션) 전략. 후보 중 지표점수 상위 top_n 을 동일가중 보유하고 체크주기마다 교체한다.",
+  "_comment": "사테라이트(모멘텀 로테이션) 전략. 후보 중 TrendScore 자격(진입≥entry_score/청산<exit_score, 히스테리시스)을 통과한 상위 top_n 슬롯을 동일가중 보유하고 체크주기마다 교체한다. 자격 종목이 모자라거나 손절된 슬롯은 현금대용(BIL)으로 보유하며, 트레일링 스탑은 고정 비율 여러 개(fixed_pcts)를 함께 백테스트해 비교한다.",
   "_off_options": [
     "enabled=false → 사테라이트 백테스트 자체를 건너뜀"
   ],
   "_field_help": {
     "indicator": "순위 지표(현재 'trend_score' 만 지원)",
     "check_period": "재평가 주기: D(매 거래일)·W(주)·M(월)·Q(분기)·'<N>D'(N거래일)",
-    "top_n": "매 체크에서 보유할 상위 종목 수(동일가중)",
+    "top_n": "매 체크에서 채울 상위 슬롯 수(동일가중, 슬롯당 1/top_n). 자격 종목이 모자라면 빈 슬롯은 현금대용 보유",
+    "entry_score": "신규 편입 TrendScore 하한(이상만 새로 매수)",
+    "exit_score": "보유 유지 TrendScore 하한(미만이면 청산). entry_score 와의 간격이 히스테리시스",
+    "cash_ticker": "빈 슬롯·손절 대피 자금을 담을 현금대용 티커(BIL=초단기 국채 ETF)",
+    "trailing": "트레일링 스탑. fixed_pcts=비교할 고정 후퇴 비율 목록(손절가=고점×(1−pct)). atr_period/atr_mult=ATR 다이나믹 옵션(기본 비교 미포함)",
     "universe": "후보 종목 티커 리스트"
   },
 
   "enabled": true,
-  "name": "사테라이트 로테이션 Top4",
+  "name": "사테라이트 로테이션 Top7",
   "indicator": "trend_score",
   "check_period": "M",
-  "top_n": 4,
+  "top_n": 7,
+  "entry_score": 50,
+  "exit_score": 40,
+  "cash_ticker": "BIL",
+
+  "trailing": {
+    "fixed_pcts": [0.15, 0.07],
+    "atr_period": 22,
+    "atr_mult": 3.0
+  },
 
   "universe": [
     "XLK", "XLV", "XLF", "XLY", "XLP", "XLE", "XLI", "XLB", "XLU", "XLRE", "XLC",

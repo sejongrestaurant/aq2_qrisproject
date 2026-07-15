@@ -4,6 +4,10 @@
 전략을 담는다. 산출물은 기존 `BacktestResult` 로 포장되어 report 계층을 그대로 재사용한다.
 """
 from .backtester import SatelliteBacktester
-from .config import SatelliteConfig
+from .config import SatelliteConfig, TrailingStopConfig
+from .trailing import AtrTrailingStop, FixedTrailingStop, TrailingStop
 
-__all__ = ["SatelliteBacktester", "SatelliteConfig"]
+__all__ = [
+    "SatelliteBacktester", "SatelliteConfig", "TrailingStopConfig",
+    "TrailingStop", "AtrTrailingStop", "FixedTrailingStop",
+]

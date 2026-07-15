@@ -20,7 +20,7 @@ from data import ParquetDataLoader, YFinanceDataLoader
 from indicator import SuperTrendIndicator, TrendScoreIndicator
 from portfolio import PortfolioBacktester, PortfolioConfig
 from report import HTMLReporter
-from satellite import SatelliteBacktester, SatelliteConfig
+from satellite import FixedTrailingStop, SatelliteBacktester, SatelliteConfig
 from strategy import (RegimeGatedTrendScoreStrategy, RegimeTrendRiderStrategy,
                       SMASlopeROCStrategy, Strategy, SuperTrendSwingStrategy,
                       Team1RegimeStrategy, TrendScoreSwingStrategy)
@@ -208,7 +208,8 @@ class Pipeline:
             return
 
         logger.info(f"사테라이트 '{scfg.name}' · 후보 {len(scfg.universe)}종목 · "
-                    f"Top{scfg.top_n} · {scfg.check_period}체크")
+                    f"Top{scfg.top_n} · {scfg.check_period}체크 · 진입≥{scfg.entry_score:.0f}"
+                    f"/청산<{scfg.exit_score:.0f} · 현금대용 {scfg.cash_ticker}")
         ts = scfg.trend_score
         indicator = TrendScoreIndicator(
             min_len=ts.min_len, rsi_period=ts.rsi_period, adx_period=ts.adx_period,
@@ -216,20 +217,26 @@ class Pipeline:
             rsi_weight=ts.rsi_weight, adx_penalty_max=ts.adx_penalty_max,
             adx_full_strength=ts.adx_full_strength, smooth_span=ts.smooth_span)
         backtester = SatelliteBacktester(loader=self.loader, indicator=indicator, cost=self.cfg.cost)
-        try:
-            # 구간은 백테스트 공통 설정(config.json 의 data.start/end)을 따른다.
-            result = backtester.run(scfg, start=self.cfg.start, end=self.cfg.end)
-        except Exception as exc:  # noqa: BLE001 — 사테라이트 실패가 전체 리포트를 막지 않도록
-            logger.error(f"사테라이트 백테스트 실패 → 생략 ({exc})")
-            return
 
-        results.append(result)
-        m = result.metrics["strategy"]
-        b = result.metrics["benchmark"]
-        logger.info(f"{result.code:<5} {result.strategy_name:<26} 총수익 {m['total_return_pct']:>7.1f}%  "
-                    f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
-                    f"MDD {m['mdd_pct']:>6.1f}%  교체 {m.get('n_trades', 0):>4}  "
-                    f"(vs 전종목 동일가중 CAGR {b['cagr_pct']:.1f}%)")
+        # 고정 비율 트레일링 여러 개(예 15% vs 7%)를 헤드투헤드로 백테스트해 비교한다.
+        # (ATR 다이나믹은 satellite.AtrTrailingStop 으로 남아 있어 필요 시 여기에 끼워 쓸 수 있다.)
+        variants = [FixedTrailingStop(pct=p) for p in scfg.trailing.fixed_pcts]
+        for trailing in variants:
+            try:
+                # 구간은 백테스트 공통 설정(config.json 의 data.start/end)을 따른다.
+                result = backtester.run(scfg, start=self.cfg.start, end=self.cfg.end,
+                                        trailing=trailing)
+            except Exception as exc:  # noqa: BLE001 — 사테라이트 실패가 전체 리포트를 막지 않도록
+                logger.error(f"사테라이트 백테스트 실패({trailing.name}) → 생략 ({exc})")
+                continue
+
+            results.append(result)
+            m = result.metrics["strategy"]
+            b = result.metrics["benchmark"]
+            logger.info(f"{result.code:<5} {result.strategy_name:<30} 총수익 {m['total_return_pct']:>7.1f}%  "
+                        f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
+                        f"MDD {m['mdd_pct']:>6.1f}%  교체 {m.get('n_trades', 0):>4}  "
+                        f"(vs 전종목 동일가중 CAGR {b['cagr_pct']:.1f}%)")
 
     def _print_universe_summary(self, results) -> None:
         """콘솔에 전략별 유니버스 평균(CAGR·Sharpe·MDD)을 출력한다."""
