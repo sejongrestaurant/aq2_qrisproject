@@ -382,20 +382,26 @@ class HTMLReporter(Reporter):
         if not log:
             return ""
         rows = []
+        prev: set = set()   # 직전 회차 보유 종목(신규 편입 강조용)
         for i, ev in enumerate(log, 1):
             d = ev["date"]
             date_txt = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else _esc(d)
-            picks = ", ".join(_esc(x) for x in ev.get("labels", []))
+            labels = ev.get("labels", [])
+            # 직전 회차에 없던 종목만 붉은 볼드로 강조(그때그때 '새로 교체된' 종목 식별).
+            picks = ", ".join(
+                (f"<span class='new'>{_esc(x)}</span>" if x not in prev else _esc(x))
+                for x in labels)
+            prev = set(labels)
             rows.append(
                 "<tr>"
                 f"<td>{i}</td><td class='code'>{date_txt}</td>"
-                f"<td>{ev.get('n', len(ev.get('labels', [])))}</td>"
+                f"<td>{ev.get('n', len(labels))}</td>"
                 f"{_num(ev.get('ret_pct', 0.0), '%', color=True)}"
                 f"<td class='picks'>{picks}</td>"
                 "</tr>")
         return f"""
         <details class="trades" open>
-          <summary>섹터 로테이션 내역 ({len(log)}회 · 교체 시점별 선정 종목)</summary>
+          <summary>섹터 로테이션 내역 ({len(log)}회 · 교체 시점별 선정 종목 · <span class="new">붉은색</span>=신규 편입)</summary>
           <div class="table-wrap">
           <table class="grid small">
             <thead><tr><th>#</th><th>편입일</th><th>종목수</th><th>구간수익</th>
@@ -723,6 +729,7 @@ table.grid td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--li
 table.grid th:first-child,table.grid td:first-child{text-align:left}
 table.grid th:last-child,table.grid td.picks{text-align:left}
 table.grid td.picks{color:var(--muted);font-size:12px}
+.new{color:var(--neg);font-weight:700}
 table.grid td.code{font-weight:600}
 table.grid tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
 table.grid tr.grp td{border-top:2px solid var(--line)}
