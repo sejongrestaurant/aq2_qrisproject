@@ -75,18 +75,19 @@ def _strip_comments(d: dict) -> dict:
 
 
 def _default_satellite() -> SatelliteConfig:
-    """IRP 70% 슬리브용 사테라이트 기본 설정(순수 Top-N 모멘텀 로테이션).
+    """IRP 70% 슬리브용 사테라이트 기본 설정(TrendScore 게이트 로테이션).
 
-    IRP 사양은 체크주기 M·개수 7·유니버스만 지정하므로, 점수 게이트는 끄고(entry=exit=0 →
-    유효 종목이면 항상 상위 7 편입) 트레일링 스탑도 쓰지 않는다(백테스터 호출 시 trailing=None).
-    빈 슬롯이 생기면 담을 현금 대용은 단기채권(153130)으로 둔다(유니버스가 커 실제로는 드묾).
+    체크주기 M·개수 7. **TrendScore 게이트 60/45**(진입≥60·청산<45)로 약세 추세 종목은 슬롯에서
+    빼고 빈 슬롯은 현금 대용 단기채권(153130)으로 대피시킨다(하락장 실효 채권비중↑ = 동적 위기대응).
+    트레일링 스탑은 쓰지 않는다(백테스터 호출 시 trailing=None). 게이트를 끄려면(항상 상위 7 채움)
+    entry_score=exit_score=0 으로 두면 된다.
     """
     return SatelliteConfig(
         name="IRP 사테라이트 슬리브",
         check_period="M",
         top_n=7,
-        entry_score=0.0,      # 점수 게이트 사실상 끔(항상 상위 7 채움)
-        exit_score=0.0,
+        entry_score=60.0,     # 편입 문턱: TrendScore≥60 만 신규 매수
+        exit_score=45.0,      # 유지 문턱: <45 면 청산 → 빈 슬롯은 현금 대용(단기채권)
         cash_ticker="153130",
         universe=list(_DEFAULT_UNIVERSE),
         names=dict(_DEFAULT_NAMES),  # 로테이션 내역 리포트에 한글명 표시
