@@ -107,15 +107,22 @@ def _variant_config(icfg: IRPConfig, v: Variant) -> IRPConfig:
     return c
 
 
-def _build(v: Variant, cfg: Config, loader: ParquetDataLoader) -> IRPBacktester:
-    """변형 정의에서 백테스터를 만든다. ramp 가 없으면 원본 IRP 백테스터 그대로."""
+def _build(v: Variant, cfg: Config, loader: ParquetDataLoader,
+           allow_missing: bool = False) -> IRPBacktester:
+    """변형 정의에서 백테스터를 만든다.
+
+    기준선(ramp=None)도 **V2 백테스터로 감싼다** — 유니버스 무결성 가드를 태우기 위해서다.
+    슬리브를 주지 않으면 V2 는 원본 `SatelliteBacktester` 를 그대로 쓰므로 V1 동작과 같다.
+    """
     if v.ramp is None:
-        return IRPBacktester(loader=loader, indicator=v.indicator, cost=cfg.cost)
+        return IRPBacktesterV2(loader=loader, indicator=v.indicator, cost=cfg.cost,
+                               allow_missing=allow_missing)
     lo, full, floor = v.ramp
     sat = SatelliteBacktesterV2(loader=loader, indicator=v.indicator, cost=cfg.cost,
                                 ramp_score=lo, full_score=full, entry_gate=v.gate,
                                 ramp_floor=floor, ramp_hold=v.ramp_hold)
-    return IRPBacktesterV2(loader=loader, indicator=v.indicator, cost=cfg.cost, satellite=sat)
+    return IRPBacktesterV2(loader=loader, indicator=v.indicator, cost=cfg.cost, satellite=sat,
+                           allow_missing=allow_missing)
 
 
 # ── 출력 ────────────────────────────────────────────────────────
@@ -144,6 +151,9 @@ def main() -> None:
                     help="시작일 override(YYYY-MM-DD). 미지정이면 config 값.")
     ap.add_argument("--end", default=None,
                     help="종료일 override(YYYY-MM-DD). config 수정 없이 기간 컷을 하기 위한 인자.")
+    ap.add_argument("--allow-missing", action="store_true",
+                    help="유니버스 종목이 빠져도 진행(기본은 중단). 빠진 채로 나온 결과는 "
+                         "설정과 다른 전략이므로 기준선과 비교하지 말 것.")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -162,7 +172,7 @@ def main() -> None:
 
     results = {}
     for v in VARIANTS:
-        bt = _build(v, cfg, loader)
+        bt = _build(v, cfg, loader, allow_missing=args.allow_missing)
         results[v.label] = bt.run(_variant_config(icfg, v), start=start, end=end)
 
     _report(results)

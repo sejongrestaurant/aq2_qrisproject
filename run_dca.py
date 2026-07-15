@@ -44,14 +44,16 @@ DIST_HORIZON: int = 36
 
 
 # ── 조립 ────────────────────────────────────────────────────────
-def _frozen_curves(cfg: Config, icfg: IRPConfig, start, end) -> Dict[str, pd.Series]:
+def _frozen_curves(cfg: Config, icfg: IRPConfig, start, end,
+                   allow_missing: bool = False) -> Dict[str, pd.Series]:
     """동결 V2 전략곡선과 벤치마크곡선을 얻는다({표시명: equity})."""
     lo, full, floor = FROZEN_RAMP
     loader = ParquetDataLoader(cfg.data_dir)
     sat = SatelliteBacktesterV2(loader=loader, indicator=TrendScoreIndicator(), cost=cfg.cost,
                                 ramp_score=lo, full_score=full, ramp_floor=floor, ramp_hold=True)
-    res = IRPBacktesterV2(loader=loader, indicator=TrendScoreIndicator(),
-                          cost=cfg.cost, satellite=sat).run(icfg, start=start, end=end)
+    res = IRPBacktesterV2(loader=loader, indicator=TrendScoreIndicator(), cost=cfg.cost,
+                          satellite=sat, allow_missing=allow_missing
+                          ).run(icfg, start=start, end=end)
     # 벤치마크는 IRP 결과에 실려 오는 TRF7030 곡선(시작 1.0 정규화)을 그대로 쓴다.
     return {f"HELM V2(경사 {lo:.0f}→{full:.0f}·{floor:.0%})": res.equity,
             res.benchmark_name: res.benchmark}
@@ -103,6 +105,9 @@ def main() -> None:
     ap.add_argument("--start", default=None, help="시작일 override(YYYY-MM-DD).")
     ap.add_argument("--end", default=None, help="종료일 override(YYYY-MM-DD).")
     ap.add_argument("--out", default="reports", help="산출 디렉터리(기본 reports).")
+    ap.add_argument("--allow-missing", action="store_true",
+                    help="유니버스 종목이 빠져도 진행(기본은 중단). 빠진 채로 나온 수치는 "
+                         "제안서에 쓰지 말 것.")
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -116,7 +121,7 @@ def main() -> None:
     logger.info(f"적립식 분석 · 구간 {start} ~ {end} · 동결 경사 {FROZEN_RAMP}")
 
     plans: List[CashflowPlan] = [MonthlyDCA(), AnnualLump()]
-    curves = _frozen_curves(cfg, icfg, start, end)
+    curves = _frozen_curves(cfg, icfg, start, end, allow_missing=args.allow_missing)
 
     results = _simulate(curves, plans)
     _log_summary(results)
