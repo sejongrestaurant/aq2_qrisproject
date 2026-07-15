@@ -63,16 +63,38 @@ class IRPBacktester:
         # (3) 리밸런싱(주기 + 임계) 시뮬 + 무리밸런싱(드리프트) 벤치마크.
         equity, rb_dates = self._simulate(rets, weights, icfg.rebalance_period,
                                           icfg.rebalance_threshold)
-        benchmark = self._buy_and_hold(rets, weights)
+        # 벤치마크: 실제 타깃리스크 상품(KODEX TRF7030) 수익곡선. 로드 실패 시 무리밸런싱 드리프트.
+        benchmark, bench_name = self._benchmark(icfg, rets, weights)
 
         thr_txt = (f" + 임계 ±{icfg.rebalance_threshold * 100:.0f}%p"
                    if icfg.rebalance_threshold else "")
         logger.info(f"IRP 시뮬레이션 · 채권 {len(icfg.bonds)}종 {icfg.bond_weight * 100:.0f}% "
                     f"+ 사테라이트 {icfg.satellite_weight * 100:.0f}% · "
                     f"{rets.index[0]:%Y-%m-%d}~{rets.index[-1]:%Y-%m-%d} · "
-                    f"{icfg.rebalance_period}{thr_txt} 리밸런싱 {len(rb_dates)}회")
+                    f"{icfg.rebalance_period}{thr_txt} 리밸런싱 {len(rb_dates)}회 · 벤치 {bench_name}")
         # 사테라이트 슬리브의 월간 선정 이력을 IRP 결과에 실어 리포트에 로테이션 내역을 보여준다.
-        return self._to_result(icfg, rets.index, equity, benchmark, rb_dates, sat.rotations_log)
+        return self._to_result(icfg, rets.index, equity, benchmark, bench_name,
+                               rb_dates, sat.rotations_log)
+
+    def _benchmark(self, icfg: IRPConfig, rets: pd.DataFrame,
+                   weights: Dict[str, float]) -> Tuple[pd.Series, str]:
+        """비교 벤치마크 곡선과 표시명을 만든다.
+
+        1순위는 실제 타깃리스크 상품(`benchmark_ticker`, 기본 KODEX TRF7030)의 수익곡선을
+        IRP 구간에 맞춰 시작 1.0 으로 정규화한 것. 로드 실패(오프라인·미상장) 시에는
+        '무리밸런싱 30/70 드리프트' 곡선으로 폴백해 리포트가 끊기지 않게 한다.
+        """
+        idx = rets.index
+        try:
+            close = self.loader.load(icfg.benchmark_ticker).df["close"].reindex(idx).ffill()
+        except Exception as exc:  # noqa: BLE001 — 벤치마크 없으면 드리프트 폴백
+            logger.warning(f"{icfg.benchmark_ticker}: 벤치마크 로드 실패 → 무리밸런싱 드리프트로 대체 ({exc})")
+            return self._buy_and_hold(rets, weights), "무리밸런싱 30/70"
+        if close.isna().all():
+            logger.warning(f"{icfg.benchmark_ticker}: 구간 내 벤치마크 데이터 없음 → 드리프트로 대체")
+            return self._buy_and_hold(rets, weights), "무리밸런싱 30/70"
+        ret = close.pct_change(fill_method=None).fillna(0.0)
+        return (1.0 + ret).cumprod().rename("benchmark"), icfg.benchmark_name
 
     # ── 데이터 준비 ─────────────────────────────────────────────────
     def _combine_returns(self, sat_equity: pd.Series, bonds: Dict[str, float],
@@ -154,11 +176,11 @@ class IRPBacktester:
 
     # ── 결과 포장 ───────────────────────────────────────────────────
     def _to_result(self, icfg: IRPConfig, index: pd.DatetimeIndex, equity: pd.Series,
-                   benchmark: pd.Series, rb_dates: List[pd.Timestamp],
+                   benchmark: pd.Series, benchmark_name: str, rb_dates: List[pd.Timestamp],
                    rotations_log) -> BacktestResult:
         """자산곡선을 기존 `BacktestResult` 로 감싼다(리포트·지표 재사용).
 
-        · price: 가격 패널에 '무리밸런싱 드리프트(벤치마크)' 곡선을 실어 리밸런싱 효과를 대비.
+        · price: 가격 패널에 벤치마크(TRF7030 등) 곡선을 실어 IRP 전략과 대비.
         · target_long: 항상 전액 투자이므로 전 구간 True(노출 100%).
         · trades: 분기 리밸런싱 구간별 보유거래(리밸런싱 활동을 거래 테이블로 표현).
         · rotations_log: 70% 슬리브의 월간 섹터 선정 이력(리포트 로테이션 내역 표).
@@ -185,4 +207,5 @@ class IRPBacktester:
             overlays={},
             cost=self.cost,
             rotations_log=rotations_log,
+            benchmark_name=benchmark_name,
         )

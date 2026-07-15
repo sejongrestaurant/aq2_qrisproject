@@ -45,6 +45,7 @@ class BacktestResult:
     overlays: Dict[str, pd.Series] = field(default_factory=dict)
     cost: float = 0.0
     rotations_log: Optional[List[dict]] = None
+    benchmark_name: str = "Buy&Hold"  # 벤치마크 곡선 표시명(예: "KODEX TRF7030"). 리포트 라벨용.
     name: Optional[str] = None   # 사람이 읽는 표시명(예: "삼성전자"). None 이면 code 로 표시.
     _metrics: dict = field(default=None, repr=False)
 

@@ -350,7 +350,7 @@ class HTMLReporter(Reporter):
             _stat("평균손익", s.get("avg_trade_pct", 0), "%", color=True),
             _stat("노출", s.get("exposure_pct", 0), "%"),
         ])
-        vs = (f"vs Buy&amp;Hold: CAGR {b['cagr_pct']:+.1f}% · MDD {b['mdd_pct']:.1f}% · "
+        vs = (f"vs {_esc(r.benchmark_name)}: CAGR {b['cagr_pct']:+.1f}% · MDD {b['mdd_pct']:.1f}% · "
               f"Sharpe {b['sharpe']:.2f}")
         heading = heading or r.code
         chart = self._chart(r)
@@ -516,7 +516,7 @@ class HTMLReporter(Reporter):
 
         # (2) 자산곡선 vs Buy&Hold
         ax_eq.plot(idx, r.equity, color=_C_STRAT, lw=1.4, label="Strategy")
-        ax_eq.plot(r.benchmark.index, r.benchmark, color=_C_BENCH, lw=1.2, label="Buy&Hold")
+        ax_eq.plot(r.benchmark.index, r.benchmark, color=_C_BENCH, lw=1.2, label=r.benchmark_name)
         ax_eq.set_ylabel("Equity (×)")
         ax_eq.set_yscale("log")
         ax_eq.legend(loc="upper left", fontsize=8, frameon=False)

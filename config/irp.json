@@ -6,6 +6,8 @@
   "_field_help": {
     "rebalance_period": "상위 리밸런싱 주기(채권/사테라이트 비중 복원): M(월)·Q(분기)·Y(연)·none(주기 끔)",
     "rebalance_threshold": "드리프트 임계 안전망. 사테라이트 비중이 목표(70%)에서 이 값 넘게 이탈하면 주기와 무관하게 리밸런싱(0.07=±7%p). null/0 이면 끔",
+    "benchmark_ticker": "비교 벤치마크 티커(329670=KODEX TRF7030, 선진국주식70/국내채권30 타깃리스크). 로드 실패 시 무리밸런싱 30/70 드리프트로 폴백",
+    "benchmark_name": "벤치마크 표시명(리포트 라벨)",
     "start": "IRP 전용 백테스트 시작(글로벌·미국섹터 ETF 상장이 늦어 2020 이후 권장). null 이면 공통 구간",
     "end": "IRP 전용 종료(null 이면 공통 구간)",
     "bonds": "채권 슬리브 {티커: 비중}. 합이 채권 총배분(0.30). 사테라이트 비중 = 1 − 합",
@@ -16,6 +18,8 @@
   "name": "IRP 섹터로테이션 30/70",
   "rebalance_period": "Q",
   "rebalance_threshold": 0.07,
+  "benchmark_ticker": "329670",
+  "benchmark_name": "KODEX TRF7030",
   "start": "2020-01-01",
   "end": null,
 

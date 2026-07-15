@@ -277,7 +277,7 @@ class Pipeline:
         logger.info(f"{result.code:<5} {result.strategy_name:<40} 총수익 {m['total_return_pct']:>7.1f}%  "
                     f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
                     f"MDD {m['mdd_pct']:>6.1f}%  리밸 {m.get('n_trades', 0):>3}  "
-                    f"(vs 무리밸런싱 CAGR {b['cagr_pct']:.1f}%)")
+                    f"(vs {result.benchmark_name} CAGR {b['cagr_pct']:.1f}%  MDD {b['mdd_pct']:.1f}%)")
 
     def _print_universe_summary(self, results) -> None:
         """콘솔에 전략별 유니버스 평균(CAGR·Sharpe·MDD)을 출력한다."""

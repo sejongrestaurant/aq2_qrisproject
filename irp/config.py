@@ -105,6 +105,10 @@ class IRPConfig:
             예 0.07 = ±7%p. None/0 이면 임계 리밸런싱 끔(주기만). 주기와 함께 켜면 둘 다 트리거.
         bonds: {채권티커: 비중}. 합이 채권 총배분(기본 0.30). 사테라이트 비중 = 1 − 합.
         satellite: 70% 슬리브 사테라이트 설정(유니버스·체크주기·top_n).
+        benchmark_ticker: 비교 벤치마크 티커(기본 329670 KODEX TRF7030 = 선진국주식70/국내채권30
+            타깃리스크). 실제 상품 수익곡선을 IRP 대비 벤치마크로 쓴다. 로드 실패 시 '무리밸런싱
+            30/70 드리프트' 로 폴백.
+        benchmark_name: 벤치마크 표시명(리포트 라벨).
         start / end: IRP 전용 백테스트 구간 override. None 이면 파이프라인 공통 구간을 따른다.
             글로벌·미국 섹터 ETF 상장이 늦어(2021~2023) 전체 유니버스가 갖춰지는 2020년 이후로
             시작해야 로테이션이 대표성을 갖는다(기본 start=2020-01-01).
@@ -115,6 +119,8 @@ class IRPConfig:
     rebalance_threshold: Optional[float] = None
     bonds: Dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_BONDS))
     satellite: SatelliteConfig = field(default_factory=_default_satellite)
+    benchmark_ticker: str = "329670"
+    benchmark_name: str = "KODEX TRF7030"
     start: Optional[str] = "2020-01-01"
     end: Optional[str] = None
 
@@ -149,6 +155,8 @@ class IRPConfig:
         cfg.rebalance_period = str(raw.get("rebalance_period", cfg.rebalance_period)).strip().upper()
         thr = raw.get("rebalance_threshold")
         cfg.rebalance_threshold = float(thr) if thr not in (None, "", 0, 0.0, False) else None
+        cfg.benchmark_ticker = str(raw.get("benchmark_ticker", cfg.benchmark_ticker)).strip().upper()
+        cfg.benchmark_name = str(raw.get("benchmark_name", cfg.benchmark_name))
         if "start" in raw:
             cfg.start = raw.get("start") or None
         if "end" in raw:
