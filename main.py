@@ -18,6 +18,7 @@ from backtest import Backtester
 from config import Config
 from data import ParquetDataLoader, YFinanceDataLoader
 from indicator import SuperTrendIndicator, TrendScoreIndicator
+from irp import IRPBacktester, IRPConfig
 from portfolio import PortfolioBacktester, PortfolioConfig
 from report import HTMLReporter
 from satellite import FixedTrailingStop, SatelliteBacktester, SatelliteConfig
@@ -149,6 +150,7 @@ class Pipeline:
 
         self._run_portfolio(results)  # 활성화 시 자산배분 포트폴리오 결과를 추가
         self._run_satellite(results)  # 활성화 시 모멘텀 로테이션(사테라이트) 결과를 추가
+        self._run_irp(results)        # 활성화 시 IRP(채권30 + 사테라이트70) 결과를 추가
 
         if not results:
             raise RuntimeError("백테스트된 종목이 없습니다. data_dir/universe 를 확인하세요.")
@@ -237,6 +239,45 @@ class Pipeline:
                         f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
                         f"MDD {m['mdd_pct']:>6.1f}%  교체 {m.get('n_trades', 0):>4}  "
                         f"(vs 전종목 동일가중 CAGR {b['cagr_pct']:.1f}%)")
+
+    def _run_irp(self, results: list) -> None:
+        """config/irp.json 이 활성화돼 있으면 IRP(채권30 + 사테라이트70) 전략을 백테스트해 추가한다.
+
+        70% 슬리브 사테라이트의 순위 지표는 슬리브 설정의 TrendScore 파라미터로 만든다. 설정이
+        없거나 enabled=false 면 건너뛰고, 실패해도 나머지 리포트를 막지 않도록 예외를 잡아 로그만 남긴다.
+        """
+        icfg = IRPConfig.load()
+        if not icfg.enabled:
+            logger.info("IRP 백테스트 비활성(irp.enabled=false 또는 설정 파일 없음)")
+            return
+
+        s = icfg.satellite
+        logger.info(f"IRP '{icfg.name}' · 채권 {len(icfg.bonds)}종 {icfg.bond_weight * 100:.0f}% "
+                    f"+ 사테라이트 {icfg.satellite_weight * 100:.0f}%(후보 {len(s.universe)}종·"
+                    f"Top{s.top_n}·{s.check_period}) · {icfg.rebalance_period} 리밸런싱")
+        ts = s.trend_score
+        indicator = TrendScoreIndicator(
+            min_len=ts.min_len, rsi_period=ts.rsi_period, adx_period=ts.adx_period,
+            ewmac_weight=ts.ewmac_weight, tsmom_weight=ts.tsmom_weight,
+            rsi_weight=ts.rsi_weight, adx_penalty_max=ts.adx_penalty_max,
+            adx_full_strength=ts.adx_full_strength, smooth_span=ts.smooth_span)
+        backtester = IRPBacktester(loader=self.loader, indicator=indicator, cost=self.cfg.cost)
+        # IRP 전용 구간 override(글로벌·미국섹터 상장이 늦어 2020년 이후 권장). 없으면 공통 구간.
+        irp_start = icfg.start or self.cfg.start
+        irp_end = icfg.end or self.cfg.end
+        try:
+            result = backtester.run(icfg, start=irp_start, end=irp_end)
+        except Exception as exc:  # noqa: BLE001 — IRP 실패가 전체 리포트를 막지 않도록
+            logger.error(f"IRP 백테스트 실패 → 생략 ({exc})")
+            return
+
+        results.append(result)
+        m = result.metrics["strategy"]
+        b = result.metrics["benchmark"]
+        logger.info(f"{result.code:<5} {result.strategy_name:<40} 총수익 {m['total_return_pct']:>7.1f}%  "
+                    f"CAGR {m['cagr_pct']:>5.1f}%  Sharpe {m['sharpe']:>4.2f}  "
+                    f"MDD {m['mdd_pct']:>6.1f}%  리밸 {m.get('n_trades', 0):>3}  "
+                    f"(vs 무리밸런싱 CAGR {b['cagr_pct']:.1f}%)")
 
     def _print_universe_summary(self, results) -> None:
         """콘솔에 전략별 유니버스 평균(CAGR·Sharpe·MDD)을 출력한다."""

@@ -44,10 +44,14 @@ Indicator/
 │   └── engine.py               #   Backtester (익일 시가 체결, 룩어헤드 방지)
 ├── report/                     # 리포트 (결과 → 산출물)
 │   ├── base.py                 #   Reporter(ABC)
-│   └── html_report.py          #   HTMLReporter (matplotlib 차트 base64 임베드)
-├── datasets/ohlcv/             # OHLCV parquet (미국 ETF + 한국 종목)
+│   └── html_report.py          #   HTMLReporter (차트 base64 임베드 + 섹터 로테이션 내역 표)
+├── portfolio/                  # 자산배분 포트폴리오 (고정비중 + 리밸런싱, TrendScore 비중 틸트)
+├── satellite/                  # 모멘텀 로테이션 (Top-N 동일가중 + 트레일링 스탑 + 현금대용)
+├── irp/                        # ★ IRP 전략 (채권 30% 고정 + 사테라이트 70% · 분기 리밸런싱)
+├── datasets/ohlcv/             # OHLCV parquet (미국 ETF + 한국 종목/ETF)
 ├── doc/                        # 프로젝트 발표자료(.pptx)·대본·차트(assets/)
 ├── config.json                 # ★ 편집 대상: 유니버스·전략 on/off·임계·비용·구간·소스
+├── config/                     # 자산배분 설정: portfolio.json · satellite.json · irp.json
 ├── config.py                   # config.json 로더 (누락 키는 기본값 폴백)
 ├── main.py                     # 파이프라인 오케스트레이터 (Pipeline)
 └── reports/                    # 생성된 HTML 리포트 출력 위치
@@ -94,6 +98,10 @@ python main.py
 > **대표 전략(SMASlopeROCStrategy)의 파라미터**(각도 문턱 ±0.03, ROC 10일·3봉평활 등)는 현재
 > `main.py`의 `Pipeline._build_strategies()`에 고정되어 있다. 켜고 끄는 것은 `strategies.sma_slope`.
 
+> **자산배분 전략**(포트폴리오·사테라이트·IRP)은 각각 `config/portfolio.json`·`config/satellite.json`·
+> `config/irp.json` 으로 설정하며 `enabled=false` 로 끌 수 있다(파일이 없으면 해당 전략은 조용히 생략).
+> IRP 는 채권 비중(`bonds`)·리밸런싱 주기(`rebalance_period`)·70% 슬리브(`satellite`)·구간(`start`/`end`)을 지정한다.
+
 ### 워밍업 자동 확장
 
 `start` 를 지정하면 지표가 **시작 시점에 이미 예열**되도록 `warmup_bars` 만큼 시작일 이전 데이터를
@@ -108,6 +116,26 @@ python main.py
 - **SuperTrendSwingStrategy (비교군)**: ATR 밴드(기본 10×3) 방향 전환에 진입/청산.
 - **TrendScoreSwingStrategy**: TrendScore(0~100) 히스테리시스 진입/청산 + ADX 게이트 + 선택적 ATR 손절.
 - **RegimeGatedTrendScoreStrategy**: 진입=TrendScore+ADX 게이트, 청산=스윙-로우 lifeline(급락 방어형).
+
+## IRP ETF 전략 (채권 30% + 섹터 로테이션 70%)
+
+개인형 퇴직연금(IRP)을 겨냥한 **자산배분 전략**. **채권 3종을 각 10%(합 30%)로 고정**해 하방을
+받치고, 나머지 **70% 는 사테라이트(월간 Top-N 모멘텀 로테이션)** 로 글로벌·미국섹터·원자재·한국섹터
+ETF 를 굴린다. 상위 리밸런싱(채권/사테라이트 30/70 복원)은 **분기(Q)** 마다 수행한다.
+
+- **구성(composition)**: 70% 슬리브는 `satellite` 패키지를 그대로 재사용하고, IRP 는 그 위에
+  '채권 바닥 + 분기 리밸런싱' 만 얹는다. 사테라이트 자산곡선을 **하나의 합성 자산**으로 보고 채권 3종과
+  4-슬리브로 묶어 → 월간 로테이션(슬리브 내부)과 분기 리밸런싱(슬리브 간)이 자연히 2단으로 분리된다.
+- **채권(30%)**: KODEX 단기채권(153130) · 국고채3년(114260) · 종합채권(AA-이상) 액티브(273130) 각 10%.
+- **사테라이트(70%)**: 체크주기 M · **Top7** · 후보 37종(글로벌 9 + 미국섹터 9 + 원자재/리츠 4 + 한국섹터 15).
+  점수 게이트·트레일링 스탑 없이 매월 상위 7 동일가중(=총자산의 각 10%)으로 채운다.
+- **구간**: 글로벌·미국섹터 ETF 상장이 2021~2023 이라, 유니버스가 갖춰지는 **2020년 이후**로 시작한다
+  (`config/irp.json` 의 `start`). 그래야 로테이션이 대표성을 갖는다.
+- **리포트**: 종목 페이지에 **섹터 로테이션 내역** 표(교체 시점별 편입일·종목수·구간수익·선정 종목)를
+  실어 "그때그때 어떤 종목을 골랐는지" 를 보여준다(사테라이트 결과도 동일).
+
+검증(2020~2026): **CAGR 14.4% · Sharpe 1.07 · MDD −18.9%**. 채권 30% 바닥이 사테라이트 단독
+(MDD −33%) 대비 낙폭을 크게 낮춰 위험조정수익을 끌어올린다. 구현: `irp/`(`IRPBacktester`·`IRPConfig`).
 
 ## 유니버스
 

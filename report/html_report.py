@@ -355,6 +355,7 @@ class HTMLReporter(Reporter):
         heading = heading or r.code
         chart = self._chart(r)
         yearly = self._yearly_block(r)
+        rotations = self._rotations_block(r)
         trades = self._trades_table(r)
         return f"""
         <section class="card">
@@ -366,8 +367,43 @@ class HTMLReporter(Reporter):
           <div class="stats">{cards}</div>
           <img class="chart" src="data:image/png;base64,{chart}" alt="{_esc(r.code)} charts"/>
           {yearly}
+          {rotations}
           {trades}
         </section>"""
+
+    # ── 로테이션(섹터 선정) 내역 ─────────────────────────────────────
+    def _rotations_block(self, r: BacktestResult) -> str:
+        """모멘텀 로테이션 선정 이력 표(그때그때 어떤 종목을 골랐는지).
+
+        각 교체 시점의 날짜·종목 수·구간수익·선정 종목 목록을 보여준다. rotations_log 가 없는
+        결과(단일종목 전략 등)에서는 아무것도 그리지 않는다.
+        """
+        log = r.rotations_log
+        if not log:
+            return ""
+        rows = []
+        for i, ev in enumerate(log, 1):
+            d = ev["date"]
+            date_txt = d.strftime("%Y-%m-%d") if hasattr(d, "strftime") else _esc(d)
+            picks = ", ".join(_esc(x) for x in ev.get("labels", []))
+            rows.append(
+                "<tr>"
+                f"<td>{i}</td><td class='code'>{date_txt}</td>"
+                f"<td>{ev.get('n', len(ev.get('labels', [])))}</td>"
+                f"{_num(ev.get('ret_pct', 0.0), '%', color=True)}"
+                f"<td class='picks'>{picks}</td>"
+                "</tr>")
+        return f"""
+        <details class="trades" open>
+          <summary>섹터 로테이션 내역 ({len(log)}회 · 교체 시점별 선정 종목)</summary>
+          <div class="table-wrap">
+          <table class="grid small">
+            <thead><tr><th>#</th><th>편입일</th><th>종목수</th><th>구간수익</th>
+              <th>선정 종목</th></tr></thead>
+            <tbody>{''.join(rows)}</tbody>
+          </table>
+          </div>
+        </details>"""
 
     # ── 연도별 성과 (표 + 막대차트) ─────────────────────────────────
     def _yearly_block(self, r: BacktestResult) -> str:
@@ -685,6 +721,8 @@ table.grid th{text-align:right;color:var(--muted);font-weight:600;
               padding:8px 10px;border-bottom:2px solid var(--line);white-space:nowrap}
 table.grid td{text-align:right;padding:7px 10px;border-bottom:1px solid var(--line)}
 table.grid th:first-child,table.grid td:first-child{text-align:left}
+table.grid th:last-child,table.grid td.picks{text-align:left}
+table.grid td.picks{color:var(--muted);font-size:12px}
 table.grid td.code{font-weight:600}
 table.grid tfoot td{font-weight:700;border-top:2px solid var(--line);border-bottom:none}
 table.grid tr.grp td{border-top:2px solid var(--line)}

@@ -16,7 +16,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import Dict, List
 
 from config import TrendScoreParams  # 지표 파라미터 재사용(단일종목 전략과 동일 정의)
 
@@ -82,6 +82,7 @@ class SatelliteConfig:
         cash_ticker: 빈 슬롯·손절 대피 자금을 담을 현금 대용 티커(기본 BIL, 초단기 국채 ETF).
         trailing: 트레일링 스탑 파라미터(고정 비율 비교 + ATR 옵션).
         universe: 후보 종목 티커 리스트.
+        names: {티커: 표시명} 옵션 맵(로테이션 내역 리포트 가독성용). 비면 티커 그대로 표시.
     """
     enabled: bool = True
     name: str = "Satellite"
@@ -94,6 +95,12 @@ class SatelliteConfig:
     cash_ticker: str = "BIL"
     trailing: TrailingStopConfig = field(default_factory=TrailingStopConfig)
     universe: List[str] = field(default_factory=lambda: list(_DEFAULT_UNIVERSE))
+    names: Dict[str, str] = field(default_factory=dict)
+
+    def label(self, code: str) -> str:
+        """티커의 리포트 표시 라벨(이름이 있으면 ``코드·이름``, 없으면 코드)."""
+        nm = self.names.get(code)
+        return f"{code}·{nm}" if nm else code
 
     # ── 로딩 ────────────────────────────────────────────────────────
     @classmethod
@@ -122,6 +129,9 @@ class SatelliteConfig:
         universe = raw.get("universe")
         if universe:
             cfg.universe = [str(t).strip().upper() for t in universe]
+        names = _strip_comments(raw.get("names", {}))
+        if names:
+            cfg.names = {str(k).strip().upper(): str(v) for k, v in names.items()}
 
         # 지표 파라미터(부분만 적어도 기본값과 병합)
         ts = _strip_comments(raw.get("trend_score", {}))

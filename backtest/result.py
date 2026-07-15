@@ -30,6 +30,9 @@ class BacktestResult:
         indicators: 오실레이터형 부가 시계열(예: TrendScore) — 별도 패널 차트용.
         overlays: 가격 수준형 부가 시계열(예: SuperTrend) — 가격 차트 오버레이용.
         cost: 왕복 거래비용(수수료+슬리피지) 비율.
+        rotations_log: 모멘텀 로테이션 선정 이력(선택). 각 원소는 보유구성이 바뀐 시점의
+            {"date","labels"(선정 종목 표시명 리스트),"n","ret_pct"(다음 교체까지 구간수익)}.
+            사테라이트·IRP 처럼 '그때그때 어떤 종목을 골랐는지' 를 리포트 표로 보여주기 위한 것.
     """
     code: str
     strategy_name: str
@@ -41,6 +44,7 @@ class BacktestResult:
     indicators: Dict[str, pd.Series] = field(default_factory=dict)
     overlays: Dict[str, pd.Series] = field(default_factory=dict)
     cost: float = 0.0
+    rotations_log: Optional[List[dict]] = None
     name: Optional[str] = None   # 사람이 읽는 표시명(예: "삼성전자"). None 이면 code 로 표시.
     _metrics: dict = field(default=None, repr=False)
 

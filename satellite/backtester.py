@@ -60,7 +60,7 @@ class SatelliteBacktester:
         atr_period = trailing.atr_period if (trailing and trailing.needs_atr) else None
         closes, scores, atr, cash_ret = self._load_matrix(
             scfg.universe, scfg.cash_ticker, atr_period, start, end)
-        equity, rotations, stops, last_pick = self._simulate(
+        equity, rotations, stops, last_pick, pick_log = self._simulate(
             closes, scores, atr, cash_ret, scfg.top_n, scfg.check_period, trailing,
             scfg.entry_score, scfg.exit_score)
         benchmark = self._equal_weight_all(closes)
@@ -69,7 +69,7 @@ class SatelliteBacktester:
         logger.info(f"사테라이트[{rule}] 시뮬레이션 · 후보 {closes.shape[1]}종목 · "
                     f"{closes.index[0]:%Y-%m-%d}~{closes.index[-1]:%Y-%m-%d} · "
                     f"교체 {len(rotations)}회 · 손절 {stops}회 · 최근 보유 {last_pick}")
-        return self._to_result(scfg, closes, equity, benchmark, rotations, trailing)
+        return self._to_result(scfg, closes, equity, benchmark, rotations, trailing, pick_log)
 
     # ── 데이터 준비 ─────────────────────────────────────────────────
     def _load_matrix(self, universe: List[str], cash_ticker: str,
@@ -128,7 +128,8 @@ class SatelliteBacktester:
                   atr: Optional[pd.DataFrame], cash_ret: pd.Series, top_n: int,
                   period: str, trailing: Optional[TrailingStop],
                   entry_score: float, exit_score: float
-                  ) -> Tuple[pd.Series, List[pd.Timestamp], int, List[str]]:
+                  ) -> Tuple[pd.Series, List[pd.Timestamp], int, List[str],
+                             List[Tuple[pd.Timestamp, List[str]]]]:
         """점수 게이트 로테이션(상위 top_n) + 트레일링 스탑 + BIL 현금 시뮬레이션.
 
         각 체크일 종가 점수로 **자격 종목**을 추린 뒤 상위 슬롯을 뽑아 **다음 거래일**에
@@ -146,7 +147,8 @@ class SatelliteBacktester:
         간주 — 지난 주기 고점이 이월돼 스탑이 과하게 느슨해지는 것을 막는다).
 
         Returns:
-            (equity 시작 1.0, rotations 교체일 리스트, stops 손절 횟수, last_pick 마지막 보유 종목명).
+            (equity 시작 1.0, rotations 교체일 리스트, stops 손절 횟수, last_pick 마지막 보유 종목,
+             pick_log 보유구성이 바뀐 시점별 (날짜, 선정 티커 리스트)).
         """
         idx = closes.index
         tickers = list(closes.columns)
@@ -166,6 +168,7 @@ class SatelliteBacktester:
         pending: Optional[Tuple[np.ndarray, float]] = None  # (다음날 종목비중, 현금비중)
         eq = np.empty(T)
         rotations: List[pd.Timestamp] = []
+        pick_log: List[Tuple[pd.Timestamp, List[str]]] = []
         stops = 0
         prev_set: frozenset = frozenset()
 
@@ -221,10 +224,12 @@ class SatelliteBacktester:
                 cur_set = frozenset(int(s) for s in sel)
                 if cur_set != prev_set:                               # 보유 구성 변경 = 교체
                     rotations.append(idx[i])
+                    # 선정 종목을 점수 내림차순으로 기록(로테이션 내역 리포트용).
+                    pick_log.append((idx[i], [tickers[j] for j in sel]))
                     prev_set = cur_set
 
         last_pick = [tickers[j] for j in sorted(prev_set)] if prev_set else []
-        return pd.Series(eq, index=idx, name="equity"), rotations, stops, last_pick
+        return pd.Series(eq, index=idx, name="equity"), rotations, stops, last_pick, pick_log
 
     @staticmethod
     def _equal_weight_all(closes: pd.DataFrame) -> pd.Series:
@@ -243,12 +248,14 @@ class SatelliteBacktester:
     # ── 결과 포장 ───────────────────────────────────────────────────
     def _to_result(self, scfg: SatelliteConfig, closes: pd.DataFrame, equity: pd.Series,
                    benchmark: pd.Series, rotations: List[pd.Timestamp],
-                   trailing: Optional[TrailingStop]) -> BacktestResult:
+                   trailing: Optional[TrailingStop],
+                   pick_log: List[Tuple[pd.Timestamp, List[str]]]) -> BacktestResult:
         """자산곡선을 기존 `BacktestResult` 로 감싼다(리포트·지표 재사용).
 
         · price: 가격 패널에 '전 종목 동일가중(벤치마크)' 곡선을 실어 선정 효과를 대비.
         · target_long: 항상 전액 투자(종목 또는 현금 대용)이므로 전 구간 True.
         · trades: 종목 교체 구간별 보유거래(교체 활동을 리포트 거래 테이블로 표현).
+        · rotations_log: 매 교체 시점의 선정 종목·구간수익(리포트 로테이션 내역 표).
         · strategy_name: 트레일링 방식을 붙여 두 변형을 헤드투헤드로 구분한다.
         """
         bench_vals = benchmark.to_numpy()
@@ -270,4 +277,27 @@ class SatelliteBacktester:
             indicators={},
             overlays={},
             cost=self.cost,
+            rotations_log=self._build_rotations_log(equity, pick_log, scfg),
         )
+
+    @staticmethod
+    def _build_rotations_log(equity: pd.Series, pick_log: List[Tuple[pd.Timestamp, List[str]]],
+                             scfg: SatelliteConfig) -> List[dict]:
+        """교체 시점별 선정 종목·구간수익을 리포트용 dict 리스트로 만든다.
+
+        구간수익은 이 교체일부터 다음 교체일(마지막은 종료일)까지의 자산곡선 변화로 계산한다.
+        종목명은 설정의 names 맵으로 사람이 읽는 라벨(``코드·이름``)로 바꾼다.
+        """
+        idx = equity.index
+        out: List[dict] = []
+        for k, (date, codes) in enumerate(pick_log):
+            nxt = pick_log[k + 1][0] if k + 1 < len(pick_log) else idx[-1]
+            pa, pb = idx.get_loc(date), idx.get_loc(nxt)
+            ret = float(equity.iloc[pb] / equity.iloc[pa] - 1.0) if pb > pa else 0.0
+            out.append({
+                "date": date,
+                "labels": [scfg.label(c) for c in codes],
+                "n": len(codes),
+                "ret_pct": ret * 100.0,
+            })
+        return out
