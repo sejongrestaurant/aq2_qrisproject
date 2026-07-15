@@ -344,16 +344,21 @@ class HTMLReporter(Reporter):
             _stat("총수익", s["total_return_pct"], "%", color=True),
             _stat("CAGR", s["cagr_pct"], "%", color=True),
             _stat("Sharpe", s["sharpe"], "", digits=2, color=True),
+            _stat("Sortino", s.get("sortino", 0), "", digits=2, color=True),
+            _stat("Calmar", s.get("calmar", 0), "", digits=2, color=True),
             _stat("MDD", s["mdd_pct"], "%", color=True),
+            _stat("Ulcer", s.get("ulcer", 0), "", digits=2),
             _stat("거래수", s.get("n_trades", 0), "", digits=0),
             _stat("승률", s.get("win_pct", 0), "%"),
             _stat("평균손익", s.get("avg_trade_pct", 0), "%", color=True),
             _stat("노출", s.get("exposure_pct", 0), "%"),
         ])
         vs = (f"vs {_esc(r.benchmark_name)}: CAGR {b['cagr_pct']:+.1f}% · MDD {b['mdd_pct']:.1f}% · "
-              f"Sharpe {b['sharpe']:.2f}")
+              f"Sharpe {b['sharpe']:.2f} · Sortino {b.get('sortino', 0):.2f} · "
+              f"Calmar {b.get('calmar', 0):.2f} · Ulcer {b.get('ulcer', 0):.2f}")
         heading = heading or r.code
         chart = self._chart(r)
+        recovery = self._recovery_table(r)
         yearly = self._yearly_block(r)
         rotations = self._rotations_block(r)
         trades = self._trades_table(r)
@@ -365,11 +370,35 @@ class HTMLReporter(Reporter):
           </div>
           <h3 class="block-title">전체 기간 성과</h3>
           <div class="stats">{cards}</div>
+          {recovery}
           <img class="chart" src="data:image/png;base64,{chart}" alt="{_esc(r.code)} charts"/>
           {yearly}
           {rotations}
           {trades}
         </section>"""
+
+    # ── 회복(언더워터) 분석 표 ───────────────────────────────────────
+    def _recovery_table(self, r: BacktestResult) -> str:
+        """전략 vs 벤치마크 회복 지표(평균·최장 회복일수, 연평균 신규 고점 갱신)."""
+        s = r.metrics["strategy"]
+        b = r.metrics["benchmark"]
+
+        def row(label: str, key: str, unit: str, digits: int = 0) -> str:
+            return (f"<tr><td class='code'>{label}</td>"
+                    f"<td>{_fmt(s.get(key, 0), unit, digits)}</td>"
+                    f"<td>{_fmt(b.get(key, 0), unit, digits)}</td></tr>")
+
+        rows = (row("평균 회복일수", "avg_recovery_days", "일")
+                + row("최장 회복일수", "max_recovery_days", "일")
+                + row("연평균 신규 고점 갱신", "new_highs_per_year", "회", 1))
+        return f"""
+        <h3 class="block-title">회복 분석 (Recovery)</h3>
+        <div class="table-wrap">
+        <table class="grid small">
+          <thead><tr><th>지표</th><th>전략</th><th>{_esc(r.benchmark_name)}</th></tr></thead>
+          <tbody>{rows}</tbody>
+        </table>
+        </div>"""
 
     # ── 로테이션(섹터 선정) 내역 ─────────────────────────────────────
     def _rotations_block(self, r: BacktestResult) -> str:

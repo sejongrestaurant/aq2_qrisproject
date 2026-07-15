@@ -78,11 +78,33 @@ class BacktestResult:
         sharpe = float(ret.mean() / ret.std() * np.sqrt(_ANN)) if ret.std() > 0 else 0.0
         mdd = float((equity / equity.cummax() - 1.0).min())
 
+        # 하방 위험·낙폭 스트레스 지표(공격적 전략 평가에 Sharpe 보완):
+        #  · Sortino  = 상승 변동성은 빼고 하락 변동성만으로 평가(MAR=0 기준 하방편차 연율화).
+        #  · Calmar   = CAGR / |MDD|. 최악 낙폭 대비 수익 효율.
+        #  · Ulcer    = 낙폭(%) 시계열의 RMS. 낙폭의 깊이·지속을 함께 반영(체감 스트레스).
+        downside = np.minimum(ret.to_numpy(), 0.0)                 # 0 미만 일간수익만(MAR=0)
+        dd_dev = float(np.sqrt(np.mean(downside ** 2)))            # 하방편차(일간)
+        sortino = float(ret.mean() / dd_dev * np.sqrt(_ANN)) if dd_dev > 0 else 0.0
+        calmar = float(cagr / abs(mdd)) if mdd < 0 else 0.0
+        dd_curve = (equity / equity.cummax() - 1.0).to_numpy() * 100.0  # 낙폭(%) 시계열(≤0)
+        ulcer = float(np.sqrt(np.mean(dd_curve ** 2)))
+
+        # 회복(언더워터) 분석: 고점에서 밀려 새 고점을 회복하기까지의 기간(달력일).
+        #  · 평균/최장 회복일수 → 낙폭이 얼마나 오래 지속되는지(체감 스트레스의 '지속' 축).
+        #  · 연평균 신규 고점 갱신 → 새 고점을 얼마나 자주 찍는지(전진 빈도).
+        avg_rec, max_rec, new_highs_py = cls._recovery_stats(equity, years)
+
         m = {
             "total_return_pct": (final - 1.0) * 100,
             "cagr_pct": cagr * 100,
             "sharpe": sharpe,
+            "sortino": sortino,
+            "calmar": calmar,
+            "ulcer": ulcer,
             "mdd_pct": mdd * 100,
+            "avg_recovery_days": avg_rec,
+            "max_recovery_days": max_rec,
+            "new_highs_per_year": new_highs_py,
             "years": years,
         }
         if trades is not None:
@@ -97,6 +119,38 @@ class BacktestResult:
         if target_long is not None:
             m["exposure_pct"] = float(target_long.mean() * 100)
         return m
+
+    @staticmethod
+    def _recovery_stats(equity: pd.Series, years: float):
+        """언더워터(고점→회복) 구간 분석.
+
+        고점에서 밀려 이전 고점을 회복(=새 고점 도달)하기까지 걸린 달력일수를 구간마다 모아
+        평균·최장을 계산하고, 새 고점을 찍은 날 수를 연평균으로 환산한다. 마지막까지 회복하지
+        못한(아직 언더워터) 구간은 완결되지 않았으므로 평균·최장에서 제외한다.
+
+        Returns:
+            (avg_recovery_days, max_recovery_days, new_highs_per_year).
+        """
+        cmx = equity.cummax()
+        under = (equity < cmx).to_numpy()
+        dates = equity.index
+        new_high_days = int((cmx.diff().fillna(0.0).to_numpy() > 0).sum())  # cummax 가 오른 날
+
+        recoveries: List[int] = []
+        in_dd = False
+        peak_date = dates[0]              # 직전 고점 날짜(하락 시작 기준점)
+        for k in range(len(under)):
+            if under[k]:
+                in_dd = True              # 고점 아래 = 언더워터
+            else:
+                if in_dd:                 # 고점 회복 → 구간 종료(peak→회복 달력일)
+                    recoveries.append((dates[k] - peak_date).days)
+                    in_dd = False
+                peak_date = dates[k]      # 새/동일 고점 갱신 → 기준점 이동
+        avg_rec = float(np.mean(recoveries)) if recoveries else 0.0
+        max_rec = float(np.max(recoveries)) if recoveries else 0.0
+        new_highs_py = new_high_days / years if years > 0 else 0.0
+        return avg_rec, max_rec, new_highs_py
 
     # ── 연도별 성과 ──────────────────────────────────────────────────
     def yearly(self) -> List[dict]:
