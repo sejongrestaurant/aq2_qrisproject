@@ -123,14 +123,15 @@ python main.py
 |---|---|---|
 | `config/portfolio.json` | `holdings`·`rebalance`·`weighting` | 고정비중 다자산 보유 + 주기/임계 리밸런싱(+TrendScore 비중 틸트) |
 | `config/satellite.json` | `top_n`·`check_period`·`entry_score`/`exit_score`·`trailing`·`cash_ticker`·`universe` | 점수 상위 Top-N 동일가중 모멘텀 로테이션 + 트레일링 스탑 + 빈 슬롯 현금대용 |
-| `config/irp.json` | `bonds`·`rebalance_period`·`satellite`·`start`/`end` | 채권 고정 + 70% 사테라이트 슬리브를 분기 리밸런싱(IRP) |
+| `config/irp.json` | `bonds`·`rebalance_period`·`rebalance_threshold`·`satellite`·`start`/`end` | 채권 고정 + 70% 사테라이트 슬리브를 분기 + 임계(±7%p) 리밸런싱(IRP) |
 
 **IRP 설정 예시** (`config/irp.json` — 채권 30% + 사테라이트 70%):
 
 ```jsonc
 {
   "enabled": true,
-  "rebalance_period": "Q",          // 상위 리밸런싱 주기: M/Q/Y
+  "rebalance_period": "Q",          // 상위 리밸런싱 주기: M/Q/Y/none
+  "rebalance_threshold": 0.07,      // 임계 안전망: 사테라이트 비중이 목표±7%p 이탈 시 리밸런싱(null=끔)
   "start": "2020-01-01",            // IRP 전용 구간(글로벌·미국섹터 상장이 늦어 2020+ 권장)
   "bonds": {                         // 채권 슬리브(각 비중, 합=채권 총배분). 사테라이트=1−합
     "153130": 0.10, "114260": 0.10, "273130": 0.10
@@ -177,7 +178,8 @@ python main.py
 
 개인형 퇴직연금(IRP)을 겨냥한 **자산배분 전략**. **채권 3종을 각 10%(합 30%)로 고정**해 하방을
 받치고, 나머지 **70% 는 사테라이트(월간 Top-N 모멘텀 로테이션)** 로 글로벌·미국섹터·원자재·한국섹터
-ETF 를 굴린다. 상위 리밸런싱(채권/사테라이트 30/70 복원)은 **분기(Q)** 마다 수행한다.
+ETF 를 굴린다. 상위 리밸런싱(채권/사테라이트 30/70 복원)은 **분기(Q)** 마다 + 사테라이트 비중이
+목표에서 **±7%p** 넘게 틀어지면(임계 안전망) 수행한다.
 
 - **구성(composition)**: 70% 슬리브는 `satellite` 패키지를 그대로 재사용하고, IRP 는 그 위에
   '채권 바닥 + 분기 리밸런싱' 만 얹는다. 사테라이트 자산곡선을 **하나의 합성 자산**으로 보고 채권 3종과

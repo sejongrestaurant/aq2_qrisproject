@@ -101,6 +101,8 @@ class IRPConfig:
         enabled: 전략 실행 여부(파이프라인 on/off).
         name: 표시명(리포트·로그).
         rebalance_period: 상위 리밸런싱 주기(채권/사테라이트 비중 복원). "Q"(분기) 기본.
+        rebalance_threshold: 드리프트 임계(사테라이트 비중이 목표에서 이 값을 넘게 이탈하면 리밸런싱).
+            예 0.07 = ±7%p. None/0 이면 임계 리밸런싱 끔(주기만). 주기와 함께 켜면 둘 다 트리거.
         bonds: {채권티커: 비중}. 합이 채권 총배분(기본 0.30). 사테라이트 비중 = 1 − 합.
         satellite: 70% 슬리브 사테라이트 설정(유니버스·체크주기·top_n).
         start / end: IRP 전용 백테스트 구간 override. None 이면 파이프라인 공통 구간을 따른다.
@@ -110,6 +112,7 @@ class IRPConfig:
     enabled: bool = True
     name: str = "IRP 섹터로테이션"
     rebalance_period: str = "Q"
+    rebalance_threshold: Optional[float] = None
     bonds: Dict[str, float] = field(default_factory=lambda: dict(_DEFAULT_BONDS))
     satellite: SatelliteConfig = field(default_factory=_default_satellite)
     start: Optional[str] = "2020-01-01"
@@ -144,6 +147,8 @@ class IRPConfig:
         cfg.enabled = bool(raw.get("enabled", True))
         cfg.name = str(raw.get("name", cfg.name))
         cfg.rebalance_period = str(raw.get("rebalance_period", cfg.rebalance_period)).strip().upper()
+        thr = raw.get("rebalance_threshold")
+        cfg.rebalance_threshold = float(thr) if thr not in (None, "", 0, 0.0, False) else None
         if "start" in raw:
             cfg.start = raw.get("start") or None
         if "end" in raw:
@@ -179,7 +184,11 @@ class IRPConfig:
             raise ValueError("[irp] bonds 가 비어 있습니다(채권 티커:비중을 1개 이상 지정).")
         if not (0.0 < self.bond_weight < 1.0):
             raise ValueError(f"[irp] 채권 총비중은 (0,1) 범위여야 합니다: {self.bond_weight}")
-        if self.rebalance_period in ("", "NONE", "OFF"):
-            raise ValueError("[irp] rebalance_period 는 M/Q/Y 등 유효한 주기여야 합니다.")
+        if self.rebalance_period in ("", "NONE", "OFF") and not self.rebalance_threshold:
+            raise ValueError("[irp] 리밸런싱 트리거가 없습니다(rebalance_period 또는 "
+                             "rebalance_threshold 중 하나는 지정).")
+        if self.rebalance_threshold is not None and not (0.0 < self.rebalance_threshold < 1.0):
+            raise ValueError(f"[irp] rebalance_threshold 는 (0,1) 범위여야 합니다: "
+                             f"{self.rebalance_threshold}")
         # 사테라이트 슬리브도 자체 규칙으로 검증(유니버스·top_n 등).
         self.satellite.validate()

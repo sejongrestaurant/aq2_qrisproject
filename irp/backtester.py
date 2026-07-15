@@ -60,14 +60,17 @@ class IRPBacktester:
         # (2) 슬리브 일간수익 + 채권 일간수익을 공통 거래일에 정렬(4-슬리브 수익 행렬).
         rets = self._combine_returns(sat.equity, icfg.bonds, start, end)
         weights = {_SAT_KEY: icfg.satellite_weight, **icfg.bonds}
-        # (3) 분기 리밸런싱 시뮬 + 무리밸런싱(드리프트) 벤치마크.
-        equity, rb_dates = self._simulate(rets, weights, icfg.rebalance_period)
+        # (3) 리밸런싱(주기 + 임계) 시뮬 + 무리밸런싱(드리프트) 벤치마크.
+        equity, rb_dates = self._simulate(rets, weights, icfg.rebalance_period,
+                                          icfg.rebalance_threshold)
         benchmark = self._buy_and_hold(rets, weights)
 
+        thr_txt = (f" + 임계 ±{icfg.rebalance_threshold * 100:.0f}%p"
+                   if icfg.rebalance_threshold else "")
         logger.info(f"IRP 시뮬레이션 · 채권 {len(icfg.bonds)}종 {icfg.bond_weight * 100:.0f}% "
                     f"+ 사테라이트 {icfg.satellite_weight * 100:.0f}% · "
                     f"{rets.index[0]:%Y-%m-%d}~{rets.index[-1]:%Y-%m-%d} · "
-                    f"분기 리밸런싱 {len(rb_dates)}회")
+                    f"{icfg.rebalance_period}{thr_txt} 리밸런싱 {len(rb_dates)}회")
         # 사테라이트 슬리브의 월간 선정 이력을 IRP 결과에 실어 리포트에 로테이션 내역을 보여준다.
         return self._to_result(icfg, rets.index, equity, benchmark, rb_dates, sat.rotations_log)
 
@@ -96,17 +99,23 @@ class IRPBacktester:
 
     # ── 시뮬레이션 ──────────────────────────────────────────────────
     def _simulate(self, rets: pd.DataFrame, weights: Dict[str, float],
-                  period: str) -> Tuple[pd.Series, List[pd.Timestamp]]:
-        """4-슬리브 비중 합성 자산곡선 + 분기 리밸런싱 시뮬레이션.
+                  period: str, threshold: Optional[float] = None
+                  ) -> Tuple[pd.Series, List[pd.Timestamp]]:
+        """4-슬리브 비중 합성 자산곡선 + 리밸런싱(주기 + 임계) 시뮬레이션.
 
-        각 슬리브 가치를 일간수익으로 굴리고, 리밸런싱 주기의 첫 거래일에 목표비중(채권 10/10/10 +
-        사테라이트 70)으로 되돌린다. 리밸런싱 회전율(단방향)에 비례해 왕복비용을 뺀다.
+        각 슬리브 가치를 일간수익으로 굴리고, 아래 두 트리거 중 하나라도 걸리면 목표비중(채권
+        10/10/10 + 사테라이트 70)으로 되돌린다. 리밸런싱 회전율(단방향)에 비례해 왕복비용을 뺀다.
+
+          · 주기(period): 분기 등 달력 첫 거래일마다.
+          · 임계(threshold): **사테라이트 슬리브 비중**이 목표(70%)에서 ±threshold(예 0.07=7%p)를
+            넘게 틀어지면. 큰 변동으로 위험자산 비중이 튀었을 때 주기와 무관하게 즉시 되돌린다.
 
         Returns:
             (equity: 시작 1.0 자산곡선, rb_dates: 실제 리밸런싱이 일어난 날짜 리스트).
         """
         cols = list(rets.columns)
         w_t = np.array([weights[c] for c in cols], dtype=float)  # 목표비중(합=1.0)
+        sat_i = cols.index(_SAT_KEY)                             # 임계 판정용 사테라이트 슬리브 인덱스
         R = rets.to_numpy()
         dates = rets.index
         n = len(dates)
@@ -119,11 +128,14 @@ class IRPBacktester:
             if i > 0:
                 value = value * (1.0 + R[i])   # 당일 수익 반영
             total = value.sum()
-            if i > 0 and periodic[i]:           # 분기 첫 거래일 → 목표비중 복원
-                w_now = value / total
+            w_now = value / total
+            # 트리거: 주기 첫 거래일 OR 사테라이트 비중이 목표 대비 ±threshold 초과 이탈.
+            drift_hit = (threshold is not None
+                         and abs(w_now[sat_i] - w_t[sat_i]) > threshold)
+            if i > 0 and (periodic[i] or drift_hit):
                 turnover = 0.5 * np.abs(w_now - w_t).sum()
                 total *= (1.0 - self.cost * turnover)
-                value = w_t * total
+                value = w_t * total            # 목표비중 복원
                 rb_dates.append(dates[i])
             eq[i] = total
         return pd.Series(eq, index=dates, name="equity"), rb_dates
