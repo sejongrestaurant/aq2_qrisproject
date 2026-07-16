@@ -5,39 +5,17 @@
 """
 from __future__ import annotations
 
-import logging
-import os
-from typing import Dict, List, Sequence
+from typing import Dict, List
 
-import matplotlib
 import pandas as pd
 
-matplotlib.use("Agg")  # 헤드리스(터미널 실행)에서 창 없이 저장만
-import matplotlib.pyplot as plt  # noqa: E402 — use() 이후에 임포트해야 백엔드가 먹는다
-
-from .dca import DCAResult  # noqa: E402
-from .rolling import HorizonStats  # noqa: E402
-
-logger = logging.getLogger(__name__)
-
-try:  # 한글 폰트: 없으면 macOS 기본 고딕으로 폴백(팀원 환경이 제각각이라 죽지 않게)
-    import koreanize_matplotlib  # noqa: F401
-except ImportError:  # pragma: no cover
-    plt.rcParams["font.family"] = "AppleGothic"
-    plt.rcParams["axes.unicode_minus"] = False
-    logger.warning("koreanize_matplotlib 없음 → AppleGothic 폴백(한글 깨지면 설치 필요)")
+from .dca import DCAResult
+from .report_base import ReportWriter, plt  # plt 는 폰트 적용 뒤의 pyplot(베이스에서 준비)
+from .rolling import HorizonStats
 
 
-class DCAReport:
-    """적립식 분석 결과를 CSV·PNG 로 떨군다.
-
-    Args (생성자):
-        out_dir: 산출 디렉터리(없으면 만든다).
-    """
-
-    def __init__(self, out_dir: str = "reports"):
-        self.out_dir = out_dir
-        os.makedirs(out_dir, exist_ok=True)
+class DCAReport(ReportWriter):
+    """적립식 분석 결과를 CSV·PNG 로 떨군다(저장 공통부는 `ReportWriter`)."""
 
     # ── CSV ─────────────────────────────────────────────────────────
     def write_summary(self, results: Dict[str, List[DCAResult]], name: str = "dca_summary") -> str:
@@ -56,7 +34,7 @@ class DCAReport:
                     "MWR연율%": None if r.mwr_pct is None else round(r.mwr_pct, 2),
                     "TWR연율%": round(r.twr_pct, 2),
                 })
-        return self._to_csv(pd.DataFrame(rows), name)
+        return self._write_csv(pd.DataFrame(rows), name)
 
     def write_rolling(self, stats: Dict[str, List[HorizonStats]], name: str = "dca_rolling") -> str:
         """보유기간별 롤링 통계(손실 확률·중앙값·최악)."""
@@ -71,13 +49,7 @@ class DCAReport:
                     "최악%": round(s.worst_pct, 2), "최선%": round(s.best_pct, 2),
                     "MWR중앙값%": round(s.median_mwr_pct, 2),
                 })
-        return self._to_csv(pd.DataFrame(rows), name)
-
-    def _to_csv(self, df: pd.DataFrame, name: str) -> str:
-        path = os.path.join(self.out_dir, f"{name}.csv")
-        df.to_csv(path, index=False, encoding="utf-8-sig")  # 엑셀에서 한글 안 깨지게 BOM
-        logger.info(f"CSV 저장 · {path} ({len(df)}행)")
-        return path
+        return self._write_csv(pd.DataFrame(rows), name)
 
     # ── 차트 ────────────────────────────────────────────────────────
     def plot_loss_curve(self, stats: Dict[str, List[HorizonStats]],
@@ -123,11 +95,3 @@ class DCAReport:
         ax.grid(alpha=0.3)
         ax.legend(fontsize=9)
         return self._save(fig, name)
-
-    def _save(self, fig, name: str) -> str:
-        path = os.path.join(self.out_dir, f"{name}.png")
-        fig.tight_layout()
-        fig.savefig(path, dpi=150)
-        plt.close(fig)
-        logger.info(f"차트 저장 · {path}")
-        return path

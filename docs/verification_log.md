@@ -186,6 +186,86 @@ amend 해 범위를 정확히 적었다.
 > **3번과 4번이 같은 종류다**: 검증 없이 쓴 근거는 남의 것이든 내 것이든 똑같이 틀린다.
 > 두 번 다 **코드 실증**이 잡았다. 이것이 이 프로젝트의 실험 규율이 작동한 사례다.
 
+---
+
+## F. 실효 노출률 세대교체 (2026-07-16 추가)
+
+구 지표 '슬롯 미달 개월 수'(V1 언어)를 **실효 노출률**(V2 공식 지표)로 교체하는 과정에서
+재현 실패 한 건이 세 결함을 드러냈다. 검증 루프가 또 작동한 사례로 남긴다.
+
+### F1. 재현 실패 → 세 원인 분리
+
+CLAUDE.md 의 "78개월 중 62개월 슬롯 미달, 데이터 공백 0건"이 재현되지 않았다(실행값 59/79,
+공백 1건). 원인을 셋으로 분리·실증했다:
+
+| # | 결함 | 실증 | 종류 |
+|---|---|---|---|
+| F1a | **62 는 금 교체 전 V1 수치** | 금 부재(0072R0 죽은 티커 시절)+게이트60 = **62/78**, 현 36종(411060 포함)+게이트60 = **58/78**. 커밋 c3c6fc2(금→411060) 이후 CLAUDE.md 미갱신 | 서술(기존, stale) |
+| F1b | **스크립트가 게이트 60(V1)으로 측정** | 동결 상품은 `entry_gate=52`. 게이트 52 로 재면 슬롯 미달 26/78 — 58도 62도 아니다. 이진 지표 자체가 V2 에서 정의 어긋남(부분 충전 30%도 '찼다'로 셈) | 지표 오적용 |
+| F1c | **창 컷 누락 → 유령 달 오보** | 411060 parquet 만 2026-07-15 까지(타 35종 06-29). `resample("ME")` 가 존재하지 않는 79번째 달(2026-07)을 만들고 그 달 유효 후보=411060 하나 → "데이터 공백 1건" 오보. 하필 이 분석의 결론이 '공백 0건' | 코드 결함 |
+
+### F2. 대체 산출물 검증
+
+| # | 항목 | 방법 | 결과 | 판정 |
+|---|---|---|---|---|
+| F2a | 프로브 무해성(V2) | 관측 프로브 낀 곡선 vs 안 낀 대조군 equity 비교 | **완전 일치**(`.equals`) | 통과 |
+| F2b | 프로브 무해성(V1 축퇴) | `ExposureProbe(ramp_score=None)` vs 원본 `SatelliteBacktester` | **완전 일치** — A1 축퇴 보장 재확인 | 통과 |
+| F2c | 체크일 정합 가드 | 체크일 수 ≠ 관측 수면 중단하도록 | 77회=77관측, 가드 미발동 | 통과 |
+| F2d | 데이터 공백 논지 | 유효 후보 최소값이 top_n(7) 이상인가 | **최소 24종**, 공백 0건 → 노출 저하는 전부 게이트(의도된 방어) | 통과 |
+| F2e | 노출 회계 | 상태 분포 합 = 체크 수 | 부분충전39+게이트미달20+만충18 = 77 | 통과 |
+
+**공식 수치(동결 V2·전체)**: 평균 실효 노출 49.6%(만충 70% 대비 70.8%) · 중앙값 58.4% ·
+최저 0%(2020-05). 재현 `uv run python run_exposure.py`.
+
+### F3. 전시물 세대교체(V1→V2)
+
+- 구 가용성 산출물 4개 삭제(`universe_availability.py` + csv/png/inception.csv) — 프로브가 대체.
+- `contribution_analysis.py` V1 원본 엔진 → 동결 V2 슬리브 주입으로 전환·재생성.
+  기여 분해 변화: IT +8.7→+5.5, 구리 −8.4(n=3)→−2.8(**n=15**) 등. V1 은 소표본,
+  V2 는 부분 충전으로 표본 정상화.
+- stale 수치 갱신: CLAUDE.md 2곳(슬롯 미달·기여 분해) + `irp/backtester_v2.py` docstring.
+
+### F4. 구간 상태별 손익 재산출(V1→V2) — 서사 이동
+
+구 거래 지표(승률 67·손익비 1.58·PF 3.54)와 '전환 구간 5슬롯대 −1.08%'는 V1/V2 확정 불가
+상태였다(재생성 경로 소실). 엔진의 `rotations_log`(구간별 `n`·`ret_pct`)를 관측하는 신규
+모듈 `analysis/segments.py` + `run_segments.py` 로 동결 V2 기준 재산출했다.
+
+| 지표 | V1(구 기록) | V2(동결·재산출) |
+|---|---|---|
+| 승률 | 67% | **64%** |
+| 손익비 | 1.58 | **1.76** |
+| Profit Factor | 3.54 | **3.12** |
+| 5슬롯대 평균 구간수익 | **−1.08%**(유일 마이너스) | **+2.83%**(n=2) |
+| 유일 마이너스 슬롯대 | (없음, 0~3슬롯 방어) | **3슬롯대 −0.41%**(n=3) |
+
+**핵심**: 5슬롯 전환 구간이 부호를 뒤집었다(−1.08 → +2.83). Tier 2-a 부분 진입이 겨냥한
+전환 구간이 실제로 개선된 **직접 증거**다(제안서·발표 자산). 단 전환대(n=4~6)는 구간이 각
+2~5개뿐인 소표본이라 방향 참고용 — 모듈이 표본 수를 항상 함께 낸다. `손익비/PF` 는 손실 구간이
+0이면 NaN 처리(∞ 오해 방지).
+
+- 잔여: `reports/actual_holdings_monthly.csv`(월별 held_n)는 이제 `exposure_monthly.csv` 의
+  `소비슬롯`(체크별)로 대체됐다. reports/ 는 gitignore 라 커밋에 없다(로컬 오펀).
+
+### F5. 코드 리뷰(high) 후속 — 발견 9건 처리
+
+신규·정리 파일을 다중 에이전트 리뷰(파인더 6·검증 9)에 넣어 9개 결함을 확인·수정했다.
+
+| 파일 | 지적 | 판정 | 처리 |
+|---|---|---|---|
+| `analysis/exposure.py` | `n_gate` 가 신규 게이트(52)만 세어 CSV 에 `소비슬롯 > 자격통과` 모순 행(2020-04 등) | 확정 | 엔진과 같은 히스테리시스 문턱(보유 45·신규 52)으로 수정. `자격통과 ≥ 소비슬롯` 보장, 공식 수치 불변 |
+| `contribution_analysis.py` | `seg_ret` bare except 로 로드 실패 조용히 삼킴(fail-loud 위반) | 확정 | 엔진과 같은 `logger.warning` 관용구로 보이게 |
+| `contribution_analysis.py` | `reports/` makedirs 없음 → 새 클론 크래시 | 확정 | `os.makedirs` 추가 |
+| `contribution_analysis.py` | 빈 DataFrame `groupby` → KeyError | 확정 | `df.empty` 가드 + 명확한 로그 후 중단 |
+| `contribution_analysis.py` | `print()` (§2 위반) | 확정 | 전부 `logger` 로 |
+| `contribution_analysis.py` | 마지막 구간 `t1=None` 이 종목별 원본 끝봉까지(창 밖) | 개연 | 엔진 마지막 거래일로 클램프(현 데이터 무영향·미래 방어) |
+| `run_exposure.py` | V1 무해검증 실패 시 원인을 프로브로 오귀인 | 개연 | 축퇴 붕괴 가능성도 병기하도록 메시지 수정 |
+| `analysis/exposure_report.py` | `DCAReport` 와 `__init__`·`_save`·CSV 관용구 중복 | 확정 | `report_base.ReportWriter` 공통 베이스로 추출(양쪽 상속) |
+| `analysis/exposure.py` | `shortfall_cause` 가 `n_valid<top_n` 이면 게이트 혼합도 '데이터 공백'으로 | 개연 | 현 데이터에서 미발동(유효후보 최소 24). 라벨 조건이 곧 서술이라 유지 |
+
+수정 후 회귀: 노출(무해검증 통과·수치 49.6% 불변·모순행 0)·적립식(수치 불변)·기여 분해
+(수치 불변) 전부 재확인. `report.py`/`exposure_report.py` 는 공통 베이스 상속으로 축소.
+
 ## 한계 · 미검증
 
 정직하게 남긴다. 아래는 확인하지 **않은** 것들이다.
@@ -213,6 +293,17 @@ uv run python run_v2.py --end 2025-12-31   # 2025컷
 
 # 적립식
 uv run python run_dca.py                   # reports/ 에 CSV 2 · PNG 3
+
+# 실효 노출률(공식 지표) + 프로브 무해 검증
+uv run python run_exposure.py              # reports/exposure_monthly.[csv|png]
+uv run python run_exposure.py --end 2025-12-31
+
+# 기여 분해(동결 V2 기준)
+uv run python contribution_analysis.py             # reports/contribution_by_pick.csv
+uv run python contribution_analysis.py 160580      # 특정 코드 제외 반사실
+
+# 구간 상태별 손익(동결 V2 기준)
+uv run python run_segments.py                       # reports/segment_state.csv
 
 # 가드 동작 확인
 mv datasets/ohlcv/411060.parquet /tmp/ && uv run python run_v2.py   # → 중단
