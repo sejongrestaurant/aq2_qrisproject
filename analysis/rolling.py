@@ -90,15 +90,25 @@ class RollingAnalyzer:
         return out
 
     def distribution(self, plan: CashflowPlan, horizon_months: int) -> pd.Series:
-        """한 조합의 창별 손익률(%) 원자료(시작일 인덱스). 차트·CSV 용."""
+        """한 조합의 창별 손익률(%) 원자료(시작일 인덱스). 차트용."""
+        return self.distribution_frame(plan, horizon_months)["profit_pct"].rename(plan.name)
+
+    def distribution_frame(self, plan: CashflowPlan, horizon_months: int) -> pd.DataFrame:
+        """창별 원자료 표 — 손익률(%)과 MWR(연율 %)을 함께 낸다(시작일 인덱스).
+
+        창 선정 규칙은 `run()`/`distribution()` 과 **같은 `_segment()`** 를 쓴다. 원자료를
+        따로 뽑는 경로가 창 규칙을 다시 구현하면 집계표와 행 수가 어긋난다(그 어긋남은
+        표에 안 보이고 CSV 를 받은 사람만 발견한다).
+        """
         rows, starts = [], []
         for s in self.month_starts:
             seg = self._segment(s, horizon_months)
             if seg is None:
                 continue
-            rows.append(DCASimulator(seg).run(plan).profit_pct)
+            r = DCASimulator(seg).run(plan)
+            rows.append({"profit_pct": r.profit_pct, "mwr_pct": r.mwr_pct})
             starts.append(s)
-        return pd.Series(rows, index=pd.DatetimeIndex(starts), name=plan.name)
+        return pd.DataFrame(rows, index=pd.DatetimeIndex(starts))
 
     # ── 내부 ────────────────────────────────────────────────────────
     def _windows(self, plan: CashflowPlan, horizon_months: int):
