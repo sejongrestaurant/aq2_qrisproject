@@ -16,6 +16,7 @@
 산출물(reports/):
     benchmark_absolute.csv   구간 × 대상(전략·TRF7030·KOSPI200) 절대지표
     benchmark_relative.csv   구간 × 벤치마크 상대지표(초과CAGR·TE·IR·상관·베타)
+    underwater.png           언더워터(낙폭) 곡선 — 깊이 × 지속(전체 구간, 발표용)
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from typing import List, Tuple
 import pandas as pd
 
 from analysis.benchmark import BenchmarkComparison, align_curve
+from analysis.drawdown_report import DrawdownReport
 from analysis.frozen import build_irp
 from analysis.report_base import ReportWriter
 from config import Config
@@ -80,12 +82,14 @@ def main() -> None:
         windows.append((f"{args.cut} 컷", args.cut))
 
     abs_rows, rel_rows = [], []
+    full_cmp: BenchmarkComparison | None = None
     for label, w_end in windows:
         logger.info("")
         logger.info(f"── 구간 [{label}] {start} ~ {w_end} ──")
         cmp_ = _compare(cfg, icfg, loader, start, w_end, args.allow_missing)
         for line in cmp_.summary_lines():
             logger.info(line)
+        full_cmp = full_cmp or cmp_          # 전시물은 전체 구간(첫 창)으로 그린다
         abs_rows.append(cmp_.absolute().assign(구간=label))
         rel_rows.append(cmp_.relative().assign(구간=label))
 
@@ -94,6 +98,10 @@ def main() -> None:
                             (rel_rows, "benchmark_relative", "벤치마크")):
         df = pd.concat(rows, ignore_index=True)
         rep._write_csv(df[["구간", key] + [c for c in df.columns if c not in ("구간", key)]], name)
+
+    # 언더워터 곡선 — 순서가 곧 역할(상품 → 상품 벤치마크 → 참고 지수).
+    DrawdownReport(args.out).plot_underwater(
+        {full_cmp.strategy_label: full_cmp.strategy, **full_cmp.benchmarks})
 
 
 if __name__ == "__main__":
