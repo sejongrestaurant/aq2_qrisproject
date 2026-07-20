@@ -555,7 +555,54 @@ text(s, ML, y2, CW, Inches(0.66),
      size=14, color=BODY, spacing=1.35)
 
 # ══════════════════════════════════════════════════════════════════
-# 13. 검증 (기술 배점 20)
+# 13. 구현 — 코드 구현력(기술 배점의 절반)
+# ══════════════════════════════════════════════════════════════════
+s, y = slide_base("구현 — 계층 분리와 세 개의 안전장치", "PHASE 3 · 기술 구현")
+text(s, ML, y, CW, Inches(0.36),
+     "재현되지 않는 백테스트는 결과가 아니라 주장이다.",
+     size=18, color=NAVY, bold=True)
+text(s, ML, y + Inches(0.40), CW, Inches(0.3),
+     "숫자를 만드는 코드보다, 그 숫자가 틀렸을 때 시끄럽게 실패하는 코드에 더 공을 들였다.",
+     size=13, color=BODY)
+y += Inches(0.88)
+
+guards = [
+    ("① 룩어헤드 원천 차단",
+     "신호는 봉 i 종가로 확정하고 **체결은 i+1 시가**로 한다. 전략이 오늘 종가를 보고 "
+     "오늘 사는 일이 코드 구조상 불가능하다 — 규칙이 아니라 엔진이 막는다."),
+    ("② 무결성 fail-loud",
+     "실제 사고에서 나온 장치다. 금(411060) 데이터가 없는 환경에서 돌리면 경고 한 줄만 남고 "
+     "금이 빠진 채 그럴듯한 수치가 나왔다. 이제 실행 전 전 종목 로드를 검증하고 "
+     "하나라도 실패하면 **멈춘다.**"),
+    ("③ 관측 프로브 무해성",
+     "노출·보유 구성을 재려고 판정 로직을 다시 구현하면 엔진과 어긋난다. 프로브는 엔진이 "
+     "**이미 정한** 값을 받아적기만 하며, 프로브를 끼운 자산곡선이 끼우지 않은 것과 "
+     "**완전히 일치함**을 매 실행 검증한다."),
+]
+cw3 = Emu(int((CW - Inches(0.44)) / 3))
+for i, (head, desc) in enumerate(guards):
+    x = ML + Emu(int((cw3 + Inches(0.22)) * i))
+    rect(s, x, y, cw3, Inches(2.30), fill=BG)
+    rect(s, x, y, cw3, Inches(0.05), fill=GOLD)
+    text(s, x + Inches(0.24), y + Inches(0.26), cw3 - Inches(0.48), Inches(0.5),
+         head, size=14, color=NAVY, bold=True)
+    # 카드 본문은 **강조** 마크업을 쓰지 않으므로 별표를 제거해 넘긴다
+    text(s, x + Inches(0.24), y + Inches(0.74), cw3 - Inches(0.48), Inches(1.4),
+         desc.replace("**", ""), size=11.5, color=BODY, spacing=1.32)
+
+y += Inches(2.62)
+rect(s, ML, y, CW, Inches(1.06), fill=NAVY)
+text(s, ML + Inches(0.28), y + Inches(0.16), CW - Inches(0.56), Inches(0.28),
+     "아키텍처 · 스택", size=12, color=GOLD, bold=True)
+text(s, ML + Inches(0.28), y + Inches(0.46), CW - Inches(0.56), Inches(0.5),
+     "책임 하나 = 클래스 하나 = 파일 하나 · 계층 9개(data · indicator · strategy · backtest · "
+     "satellite · irp · portfolio · analysis · report) · 파이썬 67파일 8,123줄\n"
+     "추상 기반 클래스로 인터페이스 고정 + 의존성 주입 → 지표·전략 교체가 설정 변경으로 끝난다  ·  "
+     "pandas · numpy · pyarrow(Parquet) · matplotlib",
+     size=11, color=RGBColor(0xD3, 0xDC, 0xE8), spacing=1.35)
+
+# ══════════════════════════════════════════════════════════════════
+# 14. 검증 (기술 배점 20)
 # ══════════════════════════════════════════════════════════════════
 s, y = slide_base("왜 이 숫자를 믿을 수 있나", "PHASE 3 · 검증과 재현성")
 items = [
@@ -645,18 +692,61 @@ table(s, ML, y, CW, [
     ["리밸런싱", "월간 점수 체크 · 분기 정기 + 목표 대비 ±7%p 이탈 시 수시"],
     ["총보수 (가정)", "연 0.49% (국내 자산배분형 액티브 ETF 관행 수준)"],
     ["위험등급", "4등급(보통위험) 가정 — 비교지수(4등급)와 동일 체급·동일 법적 분류"],
-], col_w=[0.9, 3.4], size=13, row_h=0.44,
+], col_w=[0.9, 3.4], size=13, row_h=0.46,
     align=[PP_ALIGN.LEFT, PP_ALIGN.LEFT])
-y += Inches(4.1)
-text(s, ML, y, CW, Inches(0.35), "팀 역할 분담 (R&R)", size=15, color=NAVY, bold=True)
-rnr = [("CIO", "상품컨셉·비교지수 선정 · 국면지표·자산배분 설계 · 리스크 규칙"),
-       ("CTO", "데이터 수집·전처리 · 파이썬 백테스트 구현 · 지표 코드화"),
-       ("CMO", "타겟 고객·네이밍 · 투자제안서 제작 · 성과 스토리텔링·발표")]
+
+# ══════════════════════════════════════════════════════════════════
+# 18. 팀 역할 분담 — ETF 운용본부처럼 세 역할이 한 상품을 만든다
+# ══════════════════════════════════════════════════════════════════
+s, y = slide_base("팀 역할 분담 — 세 역할이 한 상품을 만든다", "TEAM · R&R")
+text(s, ML, y, CW, Inches(0.34),
+     "ETF 운용본부의 역할 구조를 그대로 나눴고, 각자의 산출물로 결과를 확인할 수 있게 했다.",
+     size=15, color=BODY)
+y += Inches(0.6)
+
+roles = [
+    ("CIO", "최고투자책임자", "전략 · 검증",
+     ["상품 컨셉과 비교지수 선정(KODEX TRF7030)",
+      "TrendScore 4팩터 설계 및 가중 결정",
+      "자산배분 70:30 · 문턱 52/60/45 확정",
+      "리스크 룰(손절·서킷브레이커·집중한도) 수립"],
+     "채점 기준 사전 고정 · 9/9 plateau 전수 측정 · 대안 11개 구성 기각 기록"),
+    ("CTO", "최고기술책임자", "엔진 · 데이터",
+     ["데이터 수집·전처리 파이프라인(Parquet 캐시)",
+      "백테스트 엔진 및 지표 코드화(67파일 8,123줄)",
+      "무결성 fail-loud 가드 · 관측 프로브 구현",
+      "재현 브랜치 동결 및 실험 스크립트 분리"],
+     "룩어헤드 구조적 차단 · 결정론적 재현 · 검증 32항목 문서화"),
+    ("CMO", "최고마케팅책임자", "상품 · 발표",
+     ["타깃 고객 정의 및 네이밍(헬름 IRP세븐서티액티브)",
+      "투자제안서 v1.3 작성",
+      "투자설명서 19p · 간이투자설명서 5p 제작",
+      "발표자료 20장 및 발표 대본 구성"],
+     "성과 스토리텔링 · 약점 선공개 원칙 · 예상질문 대응 준비"),
+]
 cw3 = Emu(int((CW - Inches(0.44)) / 3))
-for i, (role, desc) in enumerate(rnr):
+for i, (code, title, tag, items, note) in enumerate(roles):
     x = ML + Emu(int((cw3 + Inches(0.22)) * i))
-    text(s, x, y + Inches(0.45), cw3, Inches(0.26), role, size=13, color=GOLD, bold=True)
-    text(s, x, y + Inches(0.74), cw3, Inches(0.7), desc, size=11.5, color=BODY, spacing=1.25)
+    rect(s, x, y, cw3, Inches(3.94), fill=BG)
+    rect(s, x, y, cw3, Inches(0.72), fill=NAVY)
+    text(s, x + Inches(0.24), y + Inches(0.10), cw3 - Inches(0.48), Inches(0.32),
+         code, size=19, color=WHITE, bold=True)
+    text(s, x + Inches(0.24), y + Inches(0.44), cw3 - Inches(0.48), Inches(0.24),
+         f"{title} · {tag}", size=10.5, color=GOLD)
+    for j, it in enumerate(items):
+        yy = y + Inches(0.92 + 0.58 * j)
+        rect(s, x + Inches(0.24), yy + Inches(0.07), Inches(0.06), Inches(0.06), fill=GOLD)
+        text(s, x + Inches(0.4), yy, cw3 - Inches(0.66), Inches(0.55), it,
+             size=11, color=BODY, spacing=1.3)
+    rect(s, x + Inches(0.24), y + Inches(3.24), cw3 - Inches(0.48), Emu(9525), fill=LINE)
+    text(s, x + Inches(0.24), y + Inches(3.38), cw3 - Inches(0.48), Inches(0.48),
+         note, size=10, color=MUTED, spacing=1.28)
+
+y += Inches(4.18)
+text(s, ML, y, CW, Inches(0.32),
+     "세 역할이 같은 숫자를 쓴다 — 제안서·투자설명서·발표자료가 모두 재현 브랜치 "
+     "v2-tier2a-freeze 의 한 벌(metrics.json)에서 나온다.",
+     size=12.5, color=BODY)
 
 # ══════════════════════════════════════════════════════════════════
 # 17. 마무리
