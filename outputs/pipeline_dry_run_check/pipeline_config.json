@@ -1,0 +1,16 @@
+{
+  "collection_failure_threshold": 0.1,
+  "database_url": "sqlite:///database/must30.db",
+  "dry_run": true,
+  "end_date": "2026-06-30",
+  "from_stage": "validate_universe",
+  "full_refresh": false,
+  "input_dir": "data",
+  "output_dir": "outputs\\pipeline_dry_run_check",
+  "start_date": "2014-01-01",
+  "strategy": "score_weight",
+  "target_size": 30,
+  "to_stage": "collect_prices",
+  "transaction_cost": 0.002,
+  "universe_path": "data\\universe\\korea_active_etf_universe_100.csv"
+}

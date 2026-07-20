@@ -1,0 +1,78 @@
+[project]
+name = "must30-active-etf"
+version = "0.1.0"
+description = "Korea active ETF research platform for monthly factor selection and regime-aware allocation."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115.0",
+    "finance-datareader>=0.9.202",
+    "loguru>=0.7.3",
+    "numpy>=2.2.0",
+    "pandas>=2.2.3",
+    "pyarrow>=18.1.0",
+    "pydantic-settings>=2.7.0",
+    "pykrx>=1.0.51",
+    "sqlalchemy>=2.0.36",
+    "uvicorn>=0.32.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27.0",
+    "mypy>=1.14.1",
+    "pandas-stubs>=2.2.3.241126",
+    "pytest>=8.3.4",
+    "ruff>=0.8.4",
+    "types-requests>=2.32.0.20241016",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [
+    "dashboard",
+    "data",
+    "database",
+    "outputs",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ANN"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.mypy]
+python_version = "3.12"
+plugins = []
+files = [
+    "src/config/settings.py",
+    "src/pipeline/run_pipeline.py",
+    "src/pipeline/stages.py",
+    "src/pipeline/state.py",
+]
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = false
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = false
+follow_imports = "silent"
+exclude = [
+    "dashboard/",
+    "data/",
+    "database/",
+    "outputs/",
+]
