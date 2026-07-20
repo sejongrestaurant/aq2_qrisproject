@@ -17,6 +17,7 @@
 산출물(reports/):
     turnover_by_year.csv   연도별 계층별 (회전횟수 · 회전율% · 비용드래그%p)
     turnover_summary.csv   계층별 전체·연평균 요약
+    turnover_by_year.png   연도별 회전율(계층 누적) + 막대 위 비용 드래그(발표용)
 """
 from __future__ import annotations
 
@@ -28,6 +29,7 @@ import pandas as pd
 from analysis.frozen import build_irp, build_sleeve
 from analysis.report_base import ReportWriter
 from analysis.turnover import TurnoverStats, recover_turnover
+from analysis.turnover_report import TurnoverReport
 from config import Config
 from data import ParquetDataLoader
 from indicator import TrendScoreIndicator
@@ -130,6 +132,7 @@ def main() -> None:
     rep = ReportWriter(args.out)
     rep._write_csv(by_year, "turnover_by_year", index=True)
     rep._write_csv(pd.DataFrame([s.summary(years) for s in stats]), "turnover_summary")
+    TurnoverReport(args.out).plot_by_year(stats, cfg.cost)
 
 
 if __name__ == "__main__":

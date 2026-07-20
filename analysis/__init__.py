@@ -21,6 +21,7 @@
   · `turnover` — 비용 있음/없음 대조로 엔진이 청구한 회전율을 되찾아 비용 드래그를 낸다.
   · `regime`   — KOSPI200 200MA 국면(상승·하락·횡보)별 성과 분해. 사후 라벨(신호 아님).
   · `frozen`   — 동결 V2 / V1 기준선 백테스터 조립을 한곳에(러너 간 구성 불일치 방지).
+  · `regime_report` / `turnover_report` — 위 둘의 전시물(국면 음영 자산곡선 · 연도별 회전율).
   · `fonts`    — 차트 한글 폰트·백엔드 설정(한곳에서만).
   · `report_base` — 리포트 저장 공통부(디렉터리·차트·CSV). report/exposure_report 가 상속.
   · `report`   — 적립식 CSV·차트 산출.
