@@ -9,6 +9,7 @@
     uv run python run_segments.py --end 2025-12-31    # 기간 컷
 산출물:
     reports/segment_state.csv   슬롯대별 (구간 수 · 평균 구간수익%)
+    reports/segment_returns.png 시기별 구간수익(색=슬롯 수) + 슬롯대별 평균(발표용)
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ import argparse
 import logging
 
 from analysis.report_base import ReportWriter
+from analysis.segment_report import SegmentReport
 from analysis.segments import compute_segment_stats
 from config import Config
 from data import ParquetDataLoader
@@ -64,6 +66,8 @@ def main() -> None:
                           for n in out.index])
     out.index.name = "슬롯수"
     ReportWriter(args.out)._write_csv(out, "segment_state", index=True)
+    # 차트는 CSV 와 같은 rotations_log 를 그린다(집계를 두 번 하지 않는다).
+    SegmentReport(args.out).plot_segments(res.rotations_log or [], top_n)
 
 
 if __name__ == "__main__":
