@@ -14,15 +14,16 @@
   · `cashflow` — 납입 계획(월 적립 / 연초 일시납)을 현금흐름으로 만든다.
   · `irr`      — 불규칙 현금흐름의 내부수익률(XIRR).
   · `dca`      — 자산곡선 + 납입 계획 → 최종 평가액·MWR.
-  · `rolling`  — 시작 시점을 굴려 성과 분포·손실 확률을 낸다.
+  · `rolling`  — 시작 시점을 굴려 **적립식**(납입액 대비) 성과 분포·손실 확률을 낸다.
+  · `rolling_returns` — 같은 롤링이되 **거치식**(연율 수익률) 분포. 분모가 달라 모듈을 나눴다.
   · `exposure` — 엔진 관측 프로브 → 체크 시점별 실효 노출률과 그 원인.
   · `segments` — 로테이션 기록 → 구간 상태별(슬롯 수) 손익·승률·PF.
   · `benchmark` — 벤치마크 병기(TRF7030·KOSPI200) 절대지표 + 추적오차·정보비율.
   · `turnover` — 비용 있음/없음 대조로 엔진이 청구한 회전율을 되찾아 비용 드래그를 낸다.
   · `regime`   — KOSPI200 200MA 국면(상승·하락·횡보)별 성과 분해. 사후 라벨(신호 아님).
   · `frozen`   — 동결 V2 / V1 기준선 백테스터 조립을 한곳에(러너 간 구성 불일치 방지).
-  · `regime_report` / `turnover_report` / `drawdown_report` — 전시물(국면 음영 자산곡선 ·
-    연도별 회전율 · 언더워터 곡선).
+  · `regime_report` / `turnover_report` / `drawdown_report` / `rolling_report` — 전시물
+    (국면 음영 자산곡선 · 연도별 회전율 · 언더워터 곡선 · 롤링 수익 분포).
   · `fonts`    — 차트 한글 폰트·백엔드 설정(한곳에서만).
   · `report_base` — 리포트 저장 공통부(디렉터리·차트·CSV). report/exposure_report 가 상속.
   · `report`   — 적립식 CSV·차트 산출.

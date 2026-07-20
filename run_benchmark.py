@@ -17,6 +17,7 @@
     benchmark_absolute.csv   구간 × 대상(전략·TRF7030·KOSPI200) 절대지표
     benchmark_relative.csv   구간 × 벤치마크 상대지표(초과CAGR·TE·IR·상관·베타)
     underwater.png           언더워터(낙폭) 곡선 — 깊이 × 지속(전체 구간, 발표용)
+    rolling_returns.csv/png  롤링 수익 분포 — 보유기간별 연율 수익률(거치식, 전체 구간)
 """
 from __future__ import annotations
 
@@ -30,6 +31,8 @@ from analysis.benchmark import BenchmarkComparison, align_curve
 from analysis.drawdown_report import DrawdownReport
 from analysis.frozen import build_irp
 from analysis.report_base import ReportWriter
+from analysis.rolling_report import RollingReturnReport
+from analysis.rolling_returns import RollingReturns
 from config import Config
 from data import ParquetDataLoader
 from irp import IRPConfig
@@ -40,6 +43,9 @@ logger = logging.getLogger("run_benchmark")
 # 투자자 체감 잣대. 상품 벤치마크(TRF7030)와 성격이 달라 병기 의미가 있다.
 KOSPI200 = "069500"
 KOSPI200_NAME = "KODEX 200"
+
+# 롤링 분포 보유기간(개월). 60개월까지만 — 78개월 구간에서 그 이상은 창이 한 자릿수로 준다.
+HORIZONS = (12, 24, 36, 60)
 
 
 def _compare(cfg: Config, icfg: IRPConfig, loader: ParquetDataLoader,
@@ -99,9 +105,17 @@ def main() -> None:
         df = pd.concat(rows, ignore_index=True)
         rep._write_csv(df[["구간", key] + [c for c in df.columns if c not in ("구간", key)]], name)
 
-    # 언더워터 곡선 — 순서가 곧 역할(상품 → 상품 벤치마크 → 참고 지수).
-    DrawdownReport(args.out).plot_underwater(
-        {full_cmp.strategy_label: full_cmp.strategy, **full_cmp.benchmarks})
+    # 전시물 2종 — 곡선 순서가 곧 역할(상품 → 상품 벤치마크 → 참고 지수).
+    shown = {full_cmp.strategy_label: full_cmp.strategy, **full_cmp.benchmarks}
+    DrawdownReport(args.out).plot_underwater(shown)
+
+    roll = RollingReturns(shown)
+    logger.info("")
+    for line in roll.summary_lines(HORIZONS):
+        logger.info(line)
+    rep_roll = RollingReturnReport(args.out)
+    rep_roll.write_table(roll, HORIZONS)
+    rep_roll.plot_box(roll, HORIZONS)
 
 
 if __name__ == "__main__":
