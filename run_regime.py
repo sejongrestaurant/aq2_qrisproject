@@ -17,6 +17,7 @@ V1(이진 게이트 60)을 함께 놓는 이유: 동결 V2 가 겨냥한 것이 
 
 산출물(reports/):
     regime_performance.csv   국면 × 대상 (일수·비중·누적수익·연율화·MDD·평균노출)
+    regime_equity.png        국면 음영 자산곡선 + 하단 실효 노출 패널(발표용)
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ import logging
 from analysis.exposure import ExposureProbe
 from analysis.frozen import build_irp
 from analysis.regime import classify_regime, compute_regime_table, summary_lines
+from analysis.regime_report import RegimeReport
 from analysis.report_base import ReportWriter
 from config import Config
 from data import ParquetDataLoader
@@ -89,6 +91,12 @@ def main() -> None:
                 f"{icfg.satellite_weight * 100:.0f}%).")
 
     ReportWriter(args.out)._write_csv(table, "regime_performance")
+    # 차트는 표와 같은 곡선·라벨을 그대로 쓴다(재계산 없음). 순서는 색 배정 규약대로
+    # 상품(파랑) → 벤치마크(주황) → 원설계(먹색 점선).
+    RegimeReport(args.out).plot_regime_equity(
+        {_V2: curves[_V2], res_v2.benchmark_name: curves[res_v2.benchmark_name],
+         _V1: curves[_V1]},
+        labels, exposure=exposure, sleeve_weight=icfg.satellite_weight, highlight=_V2)
 
 
 if __name__ == "__main__":
