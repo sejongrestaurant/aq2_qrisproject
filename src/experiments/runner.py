@@ -7,13 +7,16 @@ import logging
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 
 from src.backtest.engine import BacktestConfig, BacktestResult, run_backtest
 from src.backtest.metrics import PerformanceConfig, calculate_performance_metrics
+from src.config.factor_config import FactorConfig, FactorName
 from src.experiments.analyzer import analyze_experiments
 from src.experiments.config_generator import ExperimentConfig
+from src.factors.composite_score import FACTOR_RAW_COLUMNS, calculate_composite_scores
 
 LOGGER = logging.getLogger(__name__)
 
@@ -140,17 +143,16 @@ def _run_one(
             result = run_backtest(
                 prices,
                 universe,
-                _factor_scores_for_setting(factor_scores, config.factor_setting),
+                _factor_scores_for_setting(
+                    factor_scores,
+                    config.factor_setting,
+                    factor_weights=config.factor_weights,
+                ),
                 market_data,
-                config=BacktestConfig(
+                config=_backtest_config_for_experiment(
+                    config,
                     start_date=period[0],
                     end_date=period[1],
-                    strategy=config.weight_method,
-                    transaction_cost=config.transaction_cost,
-                    target_size=config.target_size,
-                    rebalance_frequency=config.rebalance_frequency,
-                    regime_equity_weights=config.regime_equity_weights,
-                    factor_setting=config.factor_setting,
                     strategy_name=f"{config.experiment_id}_{period_name}",
                 ),
                 output_dir=experiment_dir / period_name,
@@ -193,9 +195,51 @@ def _run_one(
         )
 
 
-def _factor_scores_for_setting(factor_scores: pd.DataFrame, factor_setting: str) -> pd.DataFrame:
+def _backtest_config_for_experiment(
+    config: ExperimentConfig,
+    *,
+    start_date: str,
+    end_date: str | None,
+    strategy_name: str,
+) -> BacktestConfig:
+    commission, market_impact = _split_transaction_cost(config.transaction_cost)
+    return BacktestConfig(
+        start_date=start_date,
+        end_date=end_date,
+        strategy=config.weight_method,
+        transaction_cost=config.transaction_cost,
+        commission=commission,
+        market_impact=market_impact,
+        target_size=config.target_size,
+        rebalance_frequency=config.rebalance_frequency,
+        regime_equity_weights=config.regime_equity_weights,
+        factor_setting=config.factor_setting,
+        strategy_name=strategy_name,
+    )
+
+
+def _split_transaction_cost(total_cost: float) -> tuple[float, float]:
+    """Split an experiment's one-way cost using the engine's default 75/25 convention."""
+    if total_cost < 0.0:
+        raise ValueError("transaction_cost must be non-negative")
+    return total_cost * 0.75, total_cost * 0.25
+
+
+def _factor_scores_for_setting(
+    factor_scores: pd.DataFrame,
+    factor_setting: str,
+    *,
+    factor_weights: dict[str, float],
+) -> pd.DataFrame:
     """Return factor scores for a setting when precomputed variants are present."""
     if "factor_setting" not in factor_scores.columns:
+        if set(FACTOR_RAW_COLUMNS.values()) <= set(factor_scores.columns):
+            scored = calculate_composite_scores(
+                factor_scores,
+                FactorConfig(weights=cast(dict[FactorName, float], factor_weights)),
+            )
+            scored["factor_setting"] = factor_setting
+            return scored
         return factor_scores
     filtered = factor_scores.loc[factor_scores["factor_setting"] == factor_setting].copy()
     return filtered if not filtered.empty else factor_scores
