@@ -1,0 +1,70 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────
+//  SMA 각도 국면 + ROC 가속  (차트 인디케이터)
+//  KDT AI퀀트 · 나만의 인디케이터 프로젝트
+//  · 국면 = 20SMA의 각도(정규화 기울기, %/봉)로 상승/횡보/하락 3분할
+//  · 시점 = 가격 ROC(10, 3봉평활)의 기울기(가속) ≥ 0
+//  · 매수 = 상승국면 AND 가속 / 매도 = 하락국면 진입(횡보는 홀드)
+//  파이썬 원본(strategy/swing_sma_slope.py)과 로직 1:1 대응.
+// ─────────────────────────────────────────────────────────────
+indicator("SMA 각도 국면 + ROC 가속", shorttitle="RegimeMom", overlay=true)
+
+// ── 입력 (기본값 = 채택 플래그십) ──────────────────────────────
+smaLen    = input.int(20,   "SMA 기간",            group="지표")
+rocLen    = input.int(10,   "ROC 기간",            group="지표")
+rocSmooth = input.int(3,    "ROC 평활(봉)",        group="지표", minval=1)
+enterTh   = input.float(0.03,  "상승국면 각도 문턱 (%/봉)", group="국면", step=0.01)
+exitTh    = input.float(-0.03, "하락국면 각도 문턱 (%/봉)", group="국면", step=0.01)
+rocTh     = input.float(0.0,   "ROC 가속 문턱",             group="시점", step=0.01)
+showBg    = input.bool(true,   "국면 배경색 표시",          group="표시")
+
+// ── 지표 계산 ─────────────────────────────────────────────────
+sma      = ta.sma(close, smaLen)
+anglePct = (sma - sma[1]) / sma * 100.0        // 각도 = SMA의 ROC(1봉), %/봉
+rocSm    = ta.sma(ta.roc(close, rocLen), rocSmooth)   // 가격 ROC(10) → 3봉 평활
+rocAccel = rocSm - rocSm[1]                     // ROC의 기울기 = 모멘텀 가속(2차)
+
+// ── 국면 3분할 ────────────────────────────────────────────────
+isBull = anglePct >  enterTh
+isBear = anglePct <  exitTh
+isSide = not isBull and not isBear
+
+// ── 상태기 (롱-플랫, 횡보 홀드) ───────────────────────────────
+var bool inLong = false
+entryCond = isBull and rocAccel >= rocTh        // 진입: 상승국면 AND 가속
+exitCond  = anglePct <= exitTh                   // 청산: 하락국면 진입
+if inLong
+    if exitCond
+        inLong := false
+else
+    if entryCond
+        inLong := true
+
+longEntry = inLong and not inLong[1]
+longExit  = not inLong and inLong[1]
+
+// ── 시각화 ────────────────────────────────────────────────────
+plot(sma, "SMA20", color=color.new(color.orange, 0), linewidth=2)
+
+bgcolor(not showBg ? na :
+     isBull ? color.new(color.green, 85) :
+     isBear ? color.new(color.red,   85) :
+              color.new(color.gray,  90), title="국면 배경")
+
+plotshape(longEntry, "진입", shape.triangleup,   location.belowbar,
+     color=color.new(#e8534e, 0), size=size.small)
+plotshape(longExit,  "청산", shape.triangledown, location.abovebar,
+     color=color.new(#2f7ed8, 0), size=size.small)
+
+// ── 상태 표(우상단): 현재 국면 + 보유 여부 ────────────────────
+var table tb = table.new(position.top_right, 1, 2, border_width=1)
+if barstate.islast
+    regTxt = isBull ? "상승국면" : isBear ? "하락국면" : "횡보국면"
+    regCol = isBull ? color.green : isBear ? color.red : color.gray
+    table.cell(tb, 0, 0, regTxt, text_color=color.white, bgcolor=regCol, text_size=size.normal)
+    table.cell(tb, 0, 1, inLong ? "보유 중 ▲" : "관망 ○",
+         text_color=color.white, bgcolor=inLong ? #e8534e : color.new(color.gray, 30))
+
+// ── 알림 ──────────────────────────────────────────────────────
+alertcondition(longEntry, "진입 신호", "상승국면 진입(각도+ROC가속)")
+alertcondition(longExit,  "청산 신호", "하락국면 전환 청산")

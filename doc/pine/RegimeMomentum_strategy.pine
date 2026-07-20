@@ -1,0 +1,45 @@
+//@version=5
+// ─────────────────────────────────────────────────────────────
+//  SMA 각도 국면 + ROC 가속  (백테스트 전략)
+//  차트 인디케이터와 동일 로직 + TradingView 성과 검증용.
+//  체결: 신호는 봉 종가 확정 → 다음 봉 시가 체결(룩어헤드 방지),
+//        process_orders_on_close=false 로 파이썬 엔진과 동일.
+//  비용: 왕복 0.10% ≈ 편도 0.05%(commission.percent).
+// ─────────────────────────────────────────────────────────────
+strategy("SMA 각도 국면 + ROC 가속 [전략]", shorttitle="RegimeMom Strat", overlay=true,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     initial_capital=10000, pyramiding=0,
+     commission_type=strategy.commission.percent, commission_value=0.05,
+     process_orders_on_close=false, calc_on_every_tick=false)
+
+// ── 입력 ──────────────────────────────────────────────────────
+smaLen    = input.int(20,   "SMA 기간",            group="지표")
+rocLen    = input.int(10,   "ROC 기간",            group="지표")
+rocSmooth = input.int(3,    "ROC 평활(봉)",        group="지표", minval=1)
+enterTh   = input.float(0.03,  "상승국면 각도 문턱 (%/봉)", group="국면", step=0.01)
+exitTh    = input.float(-0.03, "하락국면 각도 문턱 (%/봉)", group="국면", step=0.01)
+rocTh     = input.float(0.0,   "ROC 가속 문턱",             group="시점", step=0.01)
+
+// ── 지표 계산 (인디케이터와 동일) ─────────────────────────────
+sma      = ta.sma(close, smaLen)
+anglePct = (sma - sma[1]) / sma * 100.0
+rocSm    = ta.sma(ta.roc(close, rocLen), rocSmooth)
+rocAccel = rocSm - rocSm[1]
+
+isBull = anglePct >  enterTh
+isBear = anglePct <  exitTh
+
+entryCond = isBull and rocAccel >= rocTh
+exitCond  = anglePct <= exitTh
+
+// ── 주문 (롱-플랫, 횡보 홀드) ─────────────────────────────────
+if entryCond and strategy.position_size == 0
+    strategy.entry("Long", strategy.long)
+if exitCond and strategy.position_size > 0
+    strategy.close("Long")
+
+// ── 시각화 ────────────────────────────────────────────────────
+plot(sma, "SMA20", color=color.new(color.orange, 0), linewidth=2)
+bgcolor(isBull ? color.new(color.green, 85) :
+        isBear ? color.new(color.red,   85) :
+                 color.new(color.gray,  90), title="국면 배경")
