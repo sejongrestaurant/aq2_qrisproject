@@ -2,4 +2,5 @@ pandas>=2.0
 numpy>=1.24
 pyarrow>=12.0
 matplotlib>=3.7
+koreanize-matplotlib>=0.1   # 차트 한글 폰트(run_dca.py 산출물). 없으면 AppleGothic 폴백
 yfinance>=0.2   # 온라인 시세 소스(source="yfinance")일 때만 필요
