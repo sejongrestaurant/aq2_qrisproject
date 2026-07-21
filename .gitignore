@@ -40,3 +40,7 @@ Thumbs.db
 reports/
 # yfinance OHLCV 캐시(config.cache=true 로 재다운로드 가능)
 datasets/ohlcv/*.parquet
+# 예외: 금 현물(ACE KRX금현물). 54KB 뿐이고, 이게 없으면 클론 직후 유니버스 무결성
+# 가드가 백테스트를 막아 동결 수치를 재현할 수 없다(다른 종목과 달리 최근 추가라 팀원
+# 캐시에 없다). 오프라인 즉시 재현용 보험.
+!datasets/ohlcv/411060.parquet
