@@ -160,10 +160,13 @@ def main() -> None:
     cfg, icfg = Config.load(), IRPConfig.load()
     loader = ParquetDataLoader(cfg.data_dir)
     start = icfg.start or cfg.start
+    # '전체' 구간은 config 의 end 로 못박는다(None 이면 캐시에 든 최신 봉까지 흘러가
+    # 다른 러너와 구간이 어긋난다 — 실제로 그 사고가 있었다).
+    end = icfg.end or cfg.end
     u36 = list(icfg.satellite.universe)
     u37 = _make_universe37(u36)
     thr = FROZEN_RAMP[0]     # 동결 문턱 52
-    logger.info(f"37종×Tier2a 측정 · 구간 {start} ~ 전체/{_CUT} · 동결 경사 {FROZEN_RAMP} "
+    logger.info(f"37종×Tier2a 측정 · 구간 {start} ~ {end}/{_CUT} · 동결 경사 {FROZEN_RAMP} "
                 f"· 37종(411060 미편입, 0072R0·0189B0 죽은티커) live≈35")
 
     # 2×2: (유니버스 37/36) × (전략 원설계=None / Tier2a=52). 각 칸 (전체, 2025컷) 전지표.
@@ -173,7 +176,7 @@ def main() -> None:
     cut_m: dict = {}
     for uk, uni in grid.items():
         for sk, th in strat.items():
-            full_m[(uk, sk)] = _measure(cfg, icfg, loader, uni, th, start, None)
+            full_m[(uk, sk)] = _measure(cfg, icfg, loader, uni, th, start, end)
             cut_m[(uk, sk)] = _measure(cfg, icfg, loader, uni, th, start, _CUT)
 
     cells = {k: (full_m[k].calmar, cut_m[k].calmar) for k in full_m}
@@ -182,7 +185,7 @@ def main() -> None:
     # plateau: 37종에서 문턱만 48·50·52 로 흔든다(바닥30%·만충60 고정). 그 범위 밖(≥55·<48)은 미검증.
     plateau = []
     for t in (48.0, 50.0, 52.0):
-        fm = _measure(cfg, icfg, loader, u37, t, start, None)
+        fm = _measure(cfg, icfg, loader, u37, t, start, end)
         cm = _measure(cfg, icfg, loader, u37, t, start, _CUT)
         plateau.append((t, fm.calmar, cm.calmar))
 
