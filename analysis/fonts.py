@@ -21,12 +21,21 @@ logger = logging.getLogger(__name__)
 
 _applied = False
 
+# 폴백 후보 — macOS · Windows · Linux 순으로 흔한 한글 고딕. 위에서부터 설치 여부를 확인한다.
+_FALLBACK_FONTS = ("AppleGothic", "Malgun Gothic", "NanumGothic", "Noto Sans CJK KR",
+                   "Noto Sans KR", "Gulim", "Batang")
+
 
 def apply_korean_font() -> None:
     """한글 폰트를 적용한다(여러 번 불러도 한 번만 실제로 적용).
 
-    `koreanize_matplotlib` 가 없으면 macOS 기본 고딕으로 폴백한다 — 팀원 환경이 제각각이라
-    폰트가 없다고 파이프라인이 죽으면 곤란하고, 대신 경고를 남겨 깨진 채 지나가지 않게 한다.
+    `koreanize_matplotlib` 가 없으면 **설치된 한글 폰트를 찾아** 폴백한다 — 팀원 환경이
+    제각각이라 폰트가 없다고 파이프라인이 죽으면 곤란하고, 대신 경고를 남겨 깨진 채 지나가지
+    않게 한다.
+
+    폴백을 목록으로 두는 이유: 예전엔 `AppleGothic` 하나만 걸었는데, 그건 macOS 전용이라
+    Windows 팀원 환경에서는 **없는 폰트를 지정한 채로 그림이 나왔다**(경고만 남고 한글이 전부
+    □). 폰트가 깨진 그림은 제안서에 그대로 실리므로, 실제로 설치된 것을 골라 잡는다.
     """
     global _applied
     if _applied:
@@ -34,7 +43,20 @@ def apply_korean_font() -> None:
     try:
         import koreanize_matplotlib  # noqa: F401
     except ImportError:  # pragma: no cover — 환경 의존
-        plt.rcParams["font.family"] = "AppleGothic"
+        picked = _first_installed(_FALLBACK_FONTS)
+        if picked:
+            plt.rcParams["font.family"] = picked
+            logger.warning(f"koreanize_matplotlib 없음 → 설치된 '{picked}' 로 폴백")
+        else:
+            logger.warning("koreanize_matplotlib 없고 한글 폰트도 못 찾음 → 차트 한글이 "
+                           "깨집니다(pip install koreanize-matplotlib 권장)")
         plt.rcParams["axes.unicode_minus"] = False
-        logger.warning("koreanize_matplotlib 없음 → AppleGothic 폴백(한글 깨지면 설치 필요)")
     _applied = True
+
+
+def _first_installed(names: tuple[str, ...]) -> str | None:
+    """후보 중 이 환경에 **실제로 설치된** 첫 폰트 이름을 돌려준다(없으면 None)."""
+    from matplotlib import font_manager
+
+    installed = {f.name for f in font_manager.fontManager.ttflist}
+    return next((n for n in names if n in installed), None)
